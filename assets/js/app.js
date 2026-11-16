@@ -228,3 +228,33 @@
   });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
 })();
+
+/* ---------- phone: column count for tables, swipe right to open the contents drawer, swipe left to close ---------- */
+(function () {
+  document.querySelectorAll('.scroll > table').forEach(function (t) {
+    var r = t.rows[0]; if (r) t.style.setProperty('--cols', r.cells.length);
+  });
+  var sx = 0, sy = 0, st = 0, ok = false;
+  function scrollsSideways(el) {
+    for (; el && el !== document.body; el = el.parentElement) {
+      if (el.classList && el.classList.contains('side')) return false;
+      if (el.scrollWidth > el.clientWidth + 6) { var o = getComputedStyle(el).overflowX; if (o === 'auto' || o === 'scroll') return true; }
+      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true;
+    }
+    return false;
+  }
+  document.addEventListener('touchstart', function (e) {
+    if (e.touches.length !== 1 || window.innerWidth > 900 || document.querySelector('.lightbox')) { ok = false; return; }
+    var t = e.touches[0]; sx = t.clientX; sy = t.clientY; st = Date.now();
+    var open = document.body.classList.contains('nav-open');
+    ok = open ? true : (sx > 28 && !scrollsSideways(e.target));   // leave the screen edge to the browser's own "back" gesture
+  }, { passive: true });
+  document.addEventListener('touchend', function (e) {
+    if (!ok) return; ok = false;
+    var t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) < 64 || Math.abs(dy) > Math.abs(dx) * 0.6 || Date.now() - st > 700) return;
+    var open = document.body.classList.contains('nav-open');
+    if (dx > 0 && !open) document.body.classList.add('nav-open');
+    else if (dx < 0 && open) document.body.classList.remove('nav-open');
+  }, { passive: true });
+})();

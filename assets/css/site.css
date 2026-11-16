@@ -310,3 +310,23 @@ html { -webkit-tap-highlight-color: transparent; }
   table.chapters tr.done td:nth-child(5) { color: var(--accent); font-weight: 600; }
   .pager { gap: 10px; } .pager a { padding: 12px 14px; }
 }
+
+/* ---------- phone polish, round 2 ---------- */
+@media (max-width: 640px) {
+  main { padding: 20px 18px 96px; }
+  /* tables: never squeeze a column down to one character per line; scroll sideways instead */
+  .scroll { margin: 16px -18px; padding: 0 18px; }
+  .scroll > table { margin: 0; min-width: calc(var(--cols, 3) * 7.4em); }
+  .scroll > table td, .scroll > table th { min-width: 5.6em; padding: 10px 10px; line-height: 1.55; }
+  .scroll > table td:first-child, .scroll > table th:first-child { min-width: 3.2em; padding-left: 2px; }
+  .scroll > table.to-table td, .scroll > table.to-table th, .to-table td, .to-table th { min-width: 0; padding: 5px 6px; }
+  table.chapters, .scroll > table.chapters { min-width: 0; }
+  table.chapters td, .scroll > table.chapters td, .scroll > table.chapters td:first-child { min-width: 0; padding: 0; }
+  .scroll:has(> table.chapters) { margin: 16px 0; padding: 0; background: none; }
+  /* drawer */
+  .side { width: min(86vw, 320px); padding: 18px 12px 60px 14px; font-size: 15.5px; transition: transform .22s cubic-bezier(.2,.8,.2,1); border-right: 1px solid var(--line); will-change: transform; }
+  .side a { padding-top: 9px; padding-bottom: 9px; }
+  body::after { content: ""; position: fixed; inset: 52px 0 0 0; z-index: 25; background: rgba(0,0,0,.38); opacity: 0; pointer-events: none; transition: opacity .2s; }
+  body.nav-open::after { opacity: 1; pointer-events: auto; }
+  body.nav-open { overflow: hidden; }
+}
