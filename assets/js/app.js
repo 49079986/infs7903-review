@@ -22,7 +22,7 @@
   var DARK = { ink: 1, dark: 1 };
   var theme = s0.theme || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'ink' : 'light');
   if (!THEMES.some(function (t) { return t[0] === theme; })) theme = 'light';
-  function applyTheme() { root.setAttribute('data-theme', theme); if (DARK[theme]) root.setAttribute('data-dark', ''); else root.removeAttribute('data-dark'); }
+  function applyTheme() { root.setAttribute('data-theme', theme); var mt = document.querySelector('meta[name="theme-color"]'); if (!mt) { mt = document.createElement('meta'); mt.name = 'theme-color'; document.head.appendChild(mt); } mt.content = (THEMES.filter(function (t) { return t[0] === theme; })[0] || THEMES[0])[2]; if (DARK[theme]) root.setAttribute('data-dark', ''); else root.removeAttribute('data-dark'); }
   var mode = s0.mode || 'quick';
   applyTheme(); root.setAttribute('data-mode', mode);
   function setTheme(t) { theme = t; applyTheme(); var s = state(); s.theme = t; save(s); syncTop(); }
@@ -163,9 +163,9 @@
     var breaks = { 2: 15, 4: 60, 6: 15 };   // after chapter n: break minutes
     CHAPTERS.forEach(function (c) {
       var from = hhmm(clock); clock += c.mins;
-      h += '<tr><td>' + c.n + '</td><td>' + (c.file ? '<a href="' + c.file + '">' + c.title + '</a>' : '<span class="soon">' + c.title + '（待制作）</span>') +
+      h += '<tr' + (st.done[c.id] ? ' class="done"' : '') + '><td>' + c.n + '</td><td>' + (c.file ? '<a href="' + c.file + '">' + c.title + '</a>' : '<span class="soon">' + c.title + '（待制作）</span>') +
         '</td><td class="mins">' + from + '–' + hhmm(clock) + '</td><td class="mins">' + c.mins + ' 分钟</td><td class="wt">' + (st.done[c.id] ? '已完成' : (c.file ? '未完成' : '—')) + '</td></tr>';
-      if (breaks[c.n]) { h += '<tr><td></td><td class="soon">' + (breaks[c.n] === 60 ? '午饭' : '休息') + '</td><td class="mins">' + hhmm(clock) + '–' + hhmm(clock + breaks[c.n]) + '</td><td class="mins">' + breaks[c.n] + ' 分钟</td><td></td></tr>'; clock += breaks[c.n]; }
+      if (breaks[c.n]) { h += '<tr class="brk"><td></td><td class="soon">' + (breaks[c.n] === 60 ? '午饭' : '休息') + '</td><td class="mins">' + hhmm(clock) + '–' + hhmm(clock + breaks[c.n]) + '</td><td class="mins">' + breaks[c.n] + ' 分钟</td><td></td></tr>'; clock += breaks[c.n]; }
     });
     tb.innerHTML = h;
     var d = CHAPTERS.filter(function (c) { return st.done[c.id]; }).length;

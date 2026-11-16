@@ -264,3 +264,49 @@ html[data-dark] .seg button[aria-pressed="true"], html[data-dark] .btn.pri, html
 .theme-menu button[aria-checked="true"]::after { content: "✓"; margin-left: auto; color: var(--accent); }
 .theme-menu .sw { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(128,128,128,.45); flex: none; position: relative; overflow: hidden; }
 .theme-menu .sw i { position: absolute; right: 0; top: 0; bottom: 0; width: 45%; }
+
+/* ---------- phone polish (≤ 640px) ---------- */
+html { -webkit-tap-highlight-color: transparent; }
+@media (max-width: 640px) {
+  body { font-size: 16px; line-height: 1.78; }
+  main { padding: 20px 16px 96px; }
+  .top { height: 52px; padding: 0 10px; gap: 8px; }
+  .top .brand { font-size: 16px; }
+  .side { top: 52px; height: calc(100vh - 52px); }
+  html { scroll-padding-top: 66px; }
+  .icon-btn { height: 34px; padding: 0 11px; border-radius: 9px; }
+  .seg { border-radius: 9px; } .seg button { padding: 6px 10px; }
+  h1 { font-size: 25px; line-height: 1.3; }
+  h2 { font-size: 20px; margin-top: 48px; padding-top: 22px; }
+  h3 { font-size: 17px; }
+  ul, ol { padding-left: 1.25em; }
+  table { font-size: 14.5px; } th, td { padding: 8px 9px; } th { font-size: 12.5px; }
+  pre, pre.ra { font-size: 12.5px; padding: 12px; }
+  .note { padding: 13px 14px; border-radius: 10px; }
+  details.answer > summary { padding: 12px 13px; }
+  details.answer > .body { padding-left: 13px; padding-right: 13px; }
+  .slides { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .btn { min-height: 38px; }
+  .quiz .opt { min-height: 46px; }
+  /* wide tables: fade on the right edge says "there is more, swipe" */
+  .scroll { background: linear-gradient(to right, var(--bg) 30%, transparent) left / 28px 100% no-repeat local,
+                        linear-gradient(to left, var(--bg) 30%, transparent) right / 28px 100% no-repeat local,
+                        linear-gradient(to left, color-mix(in srgb, var(--ink) 16%, transparent), transparent) right / 14px 100% no-repeat scroll; }
+  .to-table { font-size: 11.5px; min-width: 0; } .to-table td, .to-table th { padding: 5px 5px; }
+
+  /* home: the day plan becomes a list instead of a 5-column table */
+  table.chapters, table.chapters tbody { display: block; } table.chapters thead { display: none; }
+  table.chapters tr { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; align-items: baseline;
+    padding: 13px 14px; margin: 0 0 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+  table.chapters td { display: block; border: 0; padding: 0; }
+  table.chapters td:nth-child(1) { grid-row: 1 / span 2; width: auto; font-weight: 650; color: var(--accent); font-size: 17px; }
+  table.chapters td:nth-child(2) { grid-column: 2; grid-row: 1; font-weight: 600; font-size: 16.5px; line-height: 1.4; }
+  table.chapters td:nth-child(2) a { text-decoration: none; color: var(--ink); }
+  table.chapters td:nth-child(5) { grid-column: 3; grid-row: 1; font-size: 12.5px; }
+  table.chapters td:nth-child(3) { grid-column: 2; grid-row: 2; font-size: 13.5px; }
+  table.chapters td:nth-child(4) { grid-column: 3; grid-row: 2; font-size: 13.5px; text-align: right; }
+  table.chapters tr.brk { background: none; border-style: dashed; padding: 8px 14px; }
+  table.chapters tr.brk td:nth-child(2) { font-weight: 400; font-size: 14px; }
+  table.chapters tr.done td:nth-child(5) { color: var(--accent); font-weight: 600; }
+  .pager { gap: 10px; } .pager a { padding: 12px 14px; }
+}
