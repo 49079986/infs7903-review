@@ -217,16 +217,80 @@
     var io = new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) { need(e.target); io.unobserve(e.target); } }); }, { rootMargin: '900px 0px' });
     gal.forEach(function (g) { io.observe(g); });
   } else gal.forEach(need);
-  var box = null;
-  function close() { if (box) { box.remove(); box = null; } }
+  /* lightbox: swipe / arrow keys / A S W D / on-screen arrows, with a sliding transition */
+  var box = null, stage = null, cap = null, list = [], idx = 0, busy = false, moved = false;
+  function visible(a) { return a.offsetParent !== null; }
+  function label(a) { var p = a.getAttribute('data-sl').split('-'); return (a.firstChild.alt || (p[0] + ' ' + p[1])); }
+  function whenReady(a, cb) {
+    if (a.getAttribute('data-ok')) return cb();
+    need(a.closest('.slides')); var n = 0, t = setInterval(function () { if (a.getAttribute('data-ok') || ++n > 100) { clearInterval(t); if (a.getAttribute('data-ok')) cb(); else busy = false; } }, 60);
+  }
+  function mk(a) { var im = document.createElement('img'); im.src = a.firstChild.src; im.alt = a.firstChild.alt; im.draggable = false; return im; }
+  function sync() {
+    cap.textContent = (idx + 1) + ' / ' + list.length + ' · ' + label(list[idx]);
+    box.querySelector('.lb-prev').disabled = idx === 0; box.querySelector('.lb-next').disabled = idx === list.length - 1;
+    [idx - 1, idx + 1].forEach(function (i) { if (list[i] && !list[i].getAttribute('data-ok')) need(list[i].closest('.slides')); });
+  }
+  function open(a) {
+    list = Array.prototype.filter.call(document.querySelectorAll('.slides a[data-sl]'), visible); idx = list.indexOf(a); if (idx < 0) return;
+    box = document.createElement('div'); box.className = 'lightbox'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-label', '课件大图');
+    box.innerHTML = '<button type="button" class="lb-btn lb-prev" aria-label="上一张">‹</button><div class="lb-stage"></div><button type="button" class="lb-btn lb-next" aria-label="下一张">›</button><button type="button" class="lb-close" aria-label="关闭">×</button><div class="lb-cap" aria-live="polite"></div>';
+    stage = box.querySelector('.lb-stage'); cap = box.querySelector('.lb-cap'); stage.appendChild(mk(a)); document.body.appendChild(box); document.documentElement.classList.add('lb-open'); sync();
+  }
+  function close() { if (box) { box.remove(); box = null; document.documentElement.classList.remove('lb-open'); busy = false; } }
+  function go(dir, fromX) {
+    if (!box || busy) return; var j = idx + dir, old = stage.querySelector('img');
+    if (j < 0 || j >= list.length) {   // at either end: nudge and spring back
+      old.style.transition = 'transform .28s cubic-bezier(.22,1,.36,1)'; old.style.transform = 'translate3d(' + (-dir * 26) + 'px,0,0)';
+      setTimeout(function () { if (old.isConnected) old.style.transform = 'translate3d(0,0,0)'; }, 130); return;
+    }
+    busy = true;
+    whenReady(list[j], function () {
+      if (!box) return; var W = stage.clientWidth + 24, nw = mk(list[j]), start = (fromX || 0);
+      nw.style.transform = 'translate3d(' + (dir * W + start) + 'px,0,0)'; stage.appendChild(nw);
+      void nw.offsetWidth;   // commit the start position before the transition begins
+      var tr = 'transform .32s cubic-bezier(.22,1,.36,1), opacity .32s';
+      old.style.transition = tr; nw.style.transition = tr; old.style.transform = 'translate3d(' + (-dir * W) + 'px,0,0)'; old.style.opacity = '.3'; nw.style.transform = 'translate3d(0,0,0)';
+      idx = j; sync(); setTimeout(function () { if (old.parentNode) old.remove(); busy = false; }, 330);
+    });
+  }
   document.addEventListener('click', function (e) {
-    if (box) { close(); e.preventDefault(); return; }
+    if (box) {
+      if (moved) { moved = false; e.preventDefault(); return; }
+      if (e.target.closest('.lb-prev')) go(-1); else if (e.target.closest('.lb-next')) go(1); else close();
+      e.preventDefault(); return;
+    }
     var a = e.target.closest ? e.target.closest('.slides a[data-sl]') : null; if (!a) return;
-    e.preventDefault(); if (!a.getAttribute('data-ok')) return;
-    box = document.createElement('div'); box.className = 'lightbox'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', '课件大图，点击或按 Esc 关闭');
-    var im = document.createElement('img'); im.src = a.firstChild.src; im.alt = a.firstChild.alt; box.appendChild(im); document.body.appendChild(box);
+    e.preventDefault(); if (a.getAttribute('data-ok')) open(a);
   });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+  document.addEventListener('keydown', function (e) {
+    if (!box) return; var k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (k === 'Escape') close();
+    else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'a' || k === 'w') go(-1);
+    else if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'd' || k === 's' || k === ' ') go(1);
+    else return;
+    e.preventDefault(); e.stopImmediatePropagation();   // keep the page's own ←/→ section paging out of it
+  }, true);
+  var tx = 0, ty = 0, drag = 0, tlast = 0, tvel = 0, tt = 0;
+  document.addEventListener('touchstart', function (e) { if (!box || e.touches.length !== 1) { drag = 0; return; } tx = tlast = e.touches[0].clientX; ty = e.touches[0].clientY; tt = e.timeStamp; tvel = 0; drag = 1; moved = false; }, { passive: true });
+  document.addEventListener('touchmove', function (e) {
+    if (!box || !drag || busy) return; var t = e.touches[0], dx = t.clientX - tx, dy = t.clientY - ty;
+    if (drag === 1) { if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; if (Math.abs(dy) > Math.abs(dx)) { drag = 0; return; } drag = 2; tx = t.clientX; dx = 0; }
+    if (e.cancelable) e.preventDefault(); moved = true;
+    var dt = e.timeStamp - tt; if (dt > 0) tvel = 0.7 * ((t.clientX - tlast) / dt) + 0.3 * tvel; tlast = t.clientX; tt = e.timeStamp;
+    var edge = (dx > 0 && idx === 0) || (dx < 0 && idx === list.length - 1), im = stage.querySelector('img');
+    im.style.transition = 'none'; im.style.transform = 'translate3d(' + (edge ? dx * 0.3 : dx) + 'px,0,0)';
+  }, { passive: false });
+  function tend(e) {
+    if (!box || drag !== 2) { drag = 0; return; } drag = 0;
+    var dx = (e.changedTouches[0] ? e.changedTouches[0].clientX : tlast) - tx, im = stage.querySelector('img'), W = stage.clientWidth;
+    var dir = (tvel < -0.35 || dx < -W * 0.22) ? 1 : (tvel > 0.35 || dx > W * 0.22) ? -1 : 0;
+    if (dir && idx + dir >= 0 && idx + dir < list.length) go(dir, dx);
+    else { im.style.transition = 'transform .3s cubic-bezier(.22,1,.36,1)'; im.style.transform = 'translate3d(0,0,0)'; }
+    setTimeout(function () { moved = false; }, 350);
+  }
+  document.addEventListener('touchend', tend, { passive: true }); document.addEventListener('touchcancel', tend, { passive: true });
 })();
 
 /* ---------- phone: column count for tables, swipe right to open the contents drawer, swipe left to close ---------- */
