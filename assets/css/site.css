@@ -330,3 +330,14 @@ html { -webkit-tap-highlight-color: transparent; }
   body.nav-open::after { opacity: 1; pointer-events: auto; }
   body.nav-open { overflow: hidden; }
 }
+
+/* drawer follows the finger */
+@media (max-width: 900px) {
+  .side { transition: transform .3s cubic-bezier(.22,1,.36,1); will-change: transform; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  body::after { content: ""; position: fixed; inset: 52px 0 0 0; z-index: 25; background: rgba(0,0,0,.4); opacity: var(--nav-p, 0); pointer-events: none; transition: opacity .3s cubic-bezier(.22,1,.36,1); }
+  body.nav-open { --nav-p: 1; overflow: hidden; }
+  body.nav-open::after { opacity: var(--nav-p, 1); pointer-events: auto; }
+  body.nav-drag .side, body.nav-drag::after { transition: none; }
+  body.nav-drag .side { box-shadow: 0 0 40px rgba(0,0,0,.22); }
+}
+@media (min-width: 641px) and (max-width: 900px) { body::after { inset: 56px 0 0 0; } }

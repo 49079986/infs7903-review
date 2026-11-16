@@ -234,27 +234,47 @@
   document.querySelectorAll('.scroll > table').forEach(function (t) {
     var r = t.rows[0]; if (r) t.style.setProperty('--cols', r.cells.length);
   });
-  var sx = 0, sy = 0, st = 0, ok = false;
+  var side = document.querySelector('.side'), body = document.body;
+  if (!side) return;
+  var sx = 0, sy = 0, ok = false, locked = false, base = 0, W = 0, cur = 0, lastX = 0, lastT = 0, vel = 0;
   function scrollsSideways(el) {
-    for (; el && el !== document.body; el = el.parentElement) {
+    for (; el && el !== body; el = el.parentElement) {
       if (el.classList && el.classList.contains('side')) return false;
       if (el.scrollWidth > el.clientWidth + 6) { var o = getComputedStyle(el).overflowX; if (o === 'auto' || o === 'scroll') return true; }
       if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true;
     }
     return false;
   }
+  function place(x) { cur = x; side.style.transform = 'translate3d(' + x + 'px,0,0)'; body.style.setProperty('--nav-p', String(1 + x / W)); }
+  function settle(open) {
+    body.classList.remove('nav-drag'); side.style.transform = ''; body.style.removeProperty('--nav-p');
+    body.classList.toggle('nav-open', open);
+  }
   document.addEventListener('touchstart', function (e) {
-    if (e.touches.length !== 1 || window.innerWidth > 900 || document.querySelector('.lightbox')) { ok = false; return; }
-    var t = e.touches[0]; sx = t.clientX; sy = t.clientY; st = Date.now();
-    var open = document.body.classList.contains('nav-open');
-    ok = open ? true : (sx > 28 && !scrollsSideways(e.target));   // leave the screen edge to the browser's own "back" gesture
+    ok = locked = false;
+    if (e.touches.length !== 1 || window.innerWidth > 900 || document.querySelector('.lightbox')) return;
+    var t = e.touches[0], open = body.classList.contains('nav-open'); sx = lastX = t.clientX; sy = t.clientY; lastT = e.timeStamp; vel = 0;
+    ok = open ? true : (sx > 28 && !scrollsSideways(e.target));   // the screen edge stays with the browser's own "back" gesture
+    W = side.offsetWidth || 300; base = open ? 0 : -W;
   }, { passive: true });
-  document.addEventListener('touchend', function (e) {
-    if (!ok) return; ok = false;
-    var t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
-    if (Math.abs(dx) < 64 || Math.abs(dy) > Math.abs(dx) * 0.6 || Date.now() - st > 700) return;
-    var open = document.body.classList.contains('nav-open');
-    if (dx > 0 && !open) document.body.classList.add('nav-open');
-    else if (dx < 0 && open) document.body.classList.remove('nav-open');
-  }, { passive: true });
+  document.addEventListener('touchmove', function (e) {
+    if (!ok) return;
+    var t = e.touches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (!locked) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      if (Math.abs(dy) > Math.abs(dx) * 0.8 || (base === 0 ? dx > 0 : dx < 0)) { ok = false; return; }   // vertical scroll, or wrong direction
+      locked = true; body.classList.add('nav-drag'); sx = t.clientX; dx = 0;
+    }
+    if (e.cancelable) e.preventDefault();
+    var dt = e.timeStamp - lastT; if (dt > 0) vel = 0.7 * ((t.clientX - lastX) / dt) + 0.3 * vel; lastX = t.clientX; lastT = e.timeStamp;
+    place(Math.max(-W, Math.min(0, base + dx)));
+  }, { passive: false });
+  function end() {
+    if (!ok || !locked) { ok = false; return; } ok = locked = false;
+    var open = vel > 0.35 ? true : vel < -0.35 ? false : cur > -W / 2;
+    // let the browser start the transition from where the finger left it
+    requestAnimationFrame(function () { settle(open); });
+  }
+  document.addEventListener('touchend', end, { passive: true });
+  document.addEventListener('touchcancel', end, { passive: true });
 })();
