@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="quick">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 8 章 Views · INFS7903 期末复习</title>
+<link rel="stylesheet" href="../assets/css/site.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
+</head>
+<body data-chapter="views" data-base="../">
+<header class="top">
+  <button type="button" class="icon-btn menu-btn" aria-label="打开目录">目录</button>
+  <a class="brand" href="../index.html">INFS7903 <small>期末复习</small></a>
+  <span class="grow"></span>
+  <span class="top-progress"></span>
+  <div class="seg" role="group" aria-label="阅读模式">
+    <button type="button" data-mode-btn="quick" aria-pressed="true">一天速通</button>
+    <button type="button" data-mode-btn="detail" aria-pressed="false">细化讲解</button>
+  </div>
+  <button type="button" class="icon-btn" data-theme-btn>深色</button>
+</header>
+<div class="shell">
+<nav class="side" aria-label="目录"></nav>
+<main><div class="doc">
+<p class="kicker">第 8 章 · WEEK 2 · VIEWS</p>
+<h1>Views：视图、物化视图和可更新性</h1>
+<p class="lede">Week 2 整节课：view 是什么、DBMS 怎么处理对 view 的查询、哪些 view 可以更新。</p>
+<div class="meta"><span>速通约 20 分钟</span><span>2025 4/50</span></div>
+<h2 id="what" data-short="View 是什么">1　View 是什么，为什么要用</h2>
+<p><b>View</b> 是一个<b>有名字的查询</b>（named query），也叫 <b>virtual table</b>（虚拟表）。</p>
+<ul>
+<li>它<b>像</b>一张表：可以像查表一样查它。</li>
+<li>它<b>不是</b>一张表：它并不实际存在于磁盘上，存下来的只是那条查询的定义。数据还在原来的 <b>base table</b> 里。</li>
+</ul>
+<pre class="ra">CREATE VIEW IT_Students AS            -- 定义
+  SELECT name, age
+  FROM   Student
+  WHERE  major = 'IT';
+
+SELECT name FROM IT_Students          -- 使用：当成表来查
+WHERE  age > 19;
+
+DROP VIEW IT_Students;                -- 删除</pre>
+<p><b>DROP VIEW</b> 只是把 view 的定义从 system catalogue 里删掉，<b>base table 里的数据不受影响</b>。反过来，base table 被删除时，建在它上面的 view 也会跟着失效。</p>
+<h3>为什么需要 view（2025 Q1）</h3>
+<ul>
+<li><b>Logical independence（逻辑独立性）</b>：数据库设计要消除冗余，但不同用户想用不同的方式看同一份数据。View 是逻辑上的表，不引入冗余。</li>
+<li><b>Security（安全）</b>：给不同用户（角色）不同的 view，让他们只能看到被授权的行和列。View 专门用于 <b>authorization</b>。</li>
+<li><b>Convenience and clarity（方便、清晰）</b>：把复杂的查询包成 view，之后的查询写起来更简单，view 可以和表互换着用。</li>
+</ul>
+<div class="slides"><a href="#" data-sl="w02-4"><img width="1067" height="600" alt="Week02-Views.pdf 第 4 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-5"><img width="1067" height="600" alt="Week02-Views.pdf 第 5 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-6"><img width="1067" height="600" alt="Week02-Views.pdf 第 6 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-8"><img width="1067" height="600" alt="Week02-Views.pdf 第 8 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-9"><img width="1067" height="600" alt="Week02-Views.pdf 第 9 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-10"><img width="1067" height="600" alt="Week02-Views.pdf 第 10 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-11"><img width="1067" height="600" alt="Week02-Views.pdf 第 11 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-12"><img width="1067" height="600" alt="Week02-Views.pdf 第 12 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week02-Views.pdf 第 4–6、8–12 页。点图片看大图。</p>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2025 Q1（2 分）：view 的好处；drop view 会不会影响 base table</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="749" height="107" src="../assets/img/exam-2025-q1.webp" alt="2025 年试卷 Question 1"><figcaption>出处：EXAM/2025.pdf 第 2 页</figcaption></figure>
+<p class="ans-en">A view is a named query, i.e., a virtual table derived from base tables. Benefits: (1) logical independence: different users can see the same data in different ways without introducing redundancy; (2) security: views restrict users to the rows and columns they are authorised to access (used with roles and GRANT/REVOKE); (3) convenience and clarity: complex queries are simplified and views can be used interchangeably with tables.<br><br>
+When a view is dropped, only the view definition is removed from the system catalogue. The data in the underlying base tables is not affected, because a (virtual) view does not store any data.</p>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<p><b>Three-schema architecture（课件第 4 页）：</b>External level（各个用户看到的 view）→ Conceptual level（整个数据库的逻辑结构，也就是 base tables）→ Internal level（数据在磁盘上怎么存）。View 属于 external level。</p>
+<p><b>Tutorial 2 Exercise 2 的官方答案：</b>授权可以这样实现：为不同的用户组设计角色（role），DBA 为每个角色创建相应的 view，然后用 GRANT 和 REVOKE 语句管理用户的权限。</p>
+</div>
+
+<h2 id="qm" data-short="Query Modification">2　DBMS 怎么处理对 view 的查询：Query Modification</h2>
+<p>DBMS 有两种实现 view 的方式：<b>query modification</b> 和 <b>view materialization</b>（下一节）。</p>
+<p>Query modification：把“对 view 的查询”改写成“对 base table 的查询”再执行。算法两步：</p>
+<ol>
+<li>把查询的 FROM 里的 view 名字，换成 view 定义里的 base table。</li>
+<li>把 view 定义里的 WHERE 条件，用 <b>AND</b> 加到查询的 WHERE 里。</li>
+</ol>
+<p>另外，view 里改过名的列要换回原来的列名。</p>
+<pre class="ra">View 定义：  SELECT name, age FROM Student WHERE major = 'IT'
+
+用户写的：   SELECT name FROM IT_Students WHERE age > 19;
+DBMS 执行的：SELECT name FROM Student     WHERE major = 'IT' AND age > 19;</pre>
+<div class="note key"><b>两个容易丢分的地方</b><br>
+① View 的条件里有 <b>OR</b> 时，合并前要加<b>括号</b>：WHERE (major = 'IT' OR major = 'MM') AND age &gt; 19。不加括号意思就变了。<br>
+② View 里有 <b>GROUP BY 和聚合函数</b>时，对聚合结果的条件要变成 <b>HAVING</b>，不能放在 WHERE 里。</div>
+<pre class="ra">View 定义：  CREATE VIEW Majors (major, mtotal) AS
+             SELECT major, count(*) FROM Student GROUP BY major;
+
+用户写的：   SELECT * FROM Majors WHERE mtotal > 100;
+DBMS 执行的：SELECT major, count(*) FROM Student
+             GROUP BY major HAVING count(*) > 100;</pre>
+<p><b>缺点：</b>每次查询都要现场重新计算 view。同一个 view 被反复查询时效率低；view 的定义很复杂（比如有聚合）时尤其低。</p>
+<div class="slides"><a href="#" data-sl="w02-13"><img width="1067" height="600" alt="Week02-Views.pdf 第 13 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-14"><img width="1067" height="600" alt="Week02-Views.pdf 第 14 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-15"><img width="1067" height="600" alt="Week02-Views.pdf 第 15 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-16"><img width="1067" height="600" alt="Week02-Views.pdf 第 16 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-17"><img width="1067" height="600" alt="Week02-Views.pdf 第 17 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-18"><img width="1067" height="600" alt="Week02-Views.pdf 第 18 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-19"><img width="1067" height="600" alt="Week02-Views.pdf 第 19 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week02-Views.pdf 第 13–19 页。点图片看大图。</p>
+
+<h3>例题：Tutorial 2 Exercise 5</h3>
+<figure class="shot"><img loading="lazy" width="786" height="557" src="../assets/img/tut02-ex5-q.webp" alt="Tutorial 2 Exercise 5：对 view HeavyWeights 的五个操作，写出 query modification 之后实际执行的语句"><figcaption>出处：Tut02-Views-2026(1).pdf 第 3 页</figcaption></figure>
+<details class="answer"><summary><span class="label acc">官方答案</span>Tutorial 2 Exercise 5 Solution</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="810" height="537" src="../assets/img/tut02-ex5-sol.webp" alt="Tutorial 2 Exercise 5 和 Exercise 6 官方答案"><figcaption>出处：Tut02-Views-2026(1).pdf 第 5 页</figcaption></figure>
+<p><b>讲解：</b></p>
+<ul>
+<li><b>1、2：</b>列名换回去（wt → weight，col → colour），加上 view 的条件 weight &gt; 14。</li>
+<li><b>3：</b>UPDATE 也一样改写，条件变成 weight &gt; 14 AND weight = 18。</li>
+<li><b>4：</b>条件变成 weight &gt; 14 AND weight &lt; 10，不可能同时成立，所以这条 DELETE 什么都不会删。</li>
+<li><b>5：</b>插入的行 weight = 12，不满足 view 的条件。如果 view 定义时带了 <b>WITH CHECK OPTION</b>，这次插入被拒绝；否则这一行会被插进 base table，但在 view 里看不到。</li>
+</ul>
+<p><b>Exercise 6</b>（把 view 定义里的 weight 换成 weight*15）：查询里出现 wt 的地方都换成表达式 (weight * 15)。第 5 问的 INSERT <b>不能执行</b>，因为 wt 是算出来的列，DBMS 没法从 wt 反推出该往 weight 里存什么。</p>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>Tutorial 2 Exercise 4 G</h3>
+<pre class="ra">CREATE VIEW SeniorEmp (sname, sage, salary) AS
+  SELECT ename, age, salary FROM Emp WHERE age > 50;
+
+查询：     SELECT sname FROM SeniorEmp WHERE salary > 100000;</pre>
+<p><span class="label acc">官方答案</span>系统会执行：</p>
+<pre class="ra">SELECT ename
+FROM   Emp
+WHERE  age > 50 AND salary > 100000;</pre>
+</div>
+
+<h2 id="materialized" data-short="Materialized View">3　Materialized View</h2>
+<p><b>Materialized view</b>：把 view 的查询结果<b>实际算出来，存在磁盘上</b>。之后查这个 view 就直接读存好的结果，不用重新算。</p>
+<pre class="ra">CREATE MATERIALIZED VIEW Majors AS
+  SELECT major, count(*) FROM Student GROUP BY major;</pre>
+<ul>
+<li><b>优点：</b>查询 view 时不用重新计算。适合定义里有<b>聚合</b>、而且被很多查询反复使用的 view。</li>
+<li><b>代价：</b>base table 一变，存好的结果就可能过时，所以需要 <b>view maintenance</b>（维护）。</li>
+<li><b>维护的方式：</b><b>complete re-materialisation</b>（整个重新算）或 <b>incremental update</b>（只更新受影响的部分）；可以定期（periodically）更新。</li>
+</ul>
+<p>不是每次 base table 的修改都会影响 view。课件的例子，view 是按 major 统计人数：</p>
+<ul>
+<li>插入一个 MM 的学生 → MM 的计数从 1 变成 2，view <b>受影响</b>。</li>
+<li>把 Peter 的 major 从 IT 改成 MM → IT 变 1，MM 变 2，view <b>受影响</b>。</li>
+<li>把 Peter 的 age 改成 19 → view 里没有用到 age，view <b>不受影响</b>。</li>
+</ul>
+<div class="slides"><a href="#" data-sl="w02-20"><img width="1067" height="600" alt="Week02-Views.pdf 第 20 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-21"><img width="1067" height="600" alt="Week02-Views.pdf 第 21 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-22"><img width="1067" height="600" alt="Week02-Views.pdf 第 22 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-23"><img width="1067" height="600" alt="Week02-Views.pdf 第 23 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-24"><img width="1067" height="600" alt="Week02-Views.pdf 第 24 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-25"><img width="1067" height="600" alt="Week02-Views.pdf 第 25 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-26"><img width="1067" height="600" alt="Week02-Views.pdf 第 26 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-27"><img width="1067" height="600" alt="Week02-Views.pdf 第 27 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-28"><img width="1067" height="600" alt="Week02-Views.pdf 第 28 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-29"><img width="1067" height="600" alt="Week02-Views.pdf 第 29 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week02-Views.pdf 第 20–29 页。点图片看大图。</p>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2025 Q2（2 分）：常用查询里有聚合，该建哪种 view，怎么维护</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="749" height="126" src="../assets/img/exam-2025-q2.webp" alt="2025 年试卷 Question 2"><figcaption>出处：EXAM/2025.pdf 第 2 页</figcaption></figure>
+<p class="ans-en">We should create materialized views. A materialized view is a named query whose result tuples are physically stored on disk, so frequently used queries with expensive aggregation do not need to be re-computed every time; they simply re-use the stored result.<br><br>
+Maintenance: a materialized view must be updated when any base table used in its definition is updated (view maintenance). This can be done by complete re-materialisation (re-computing the whole view) or by incremental update (applying only the changes), and it can be performed periodically.</p>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<p><b>要不要 materialize，考虑这些因素（课件第 27 页）：</b>用它能省多少计算；存它要多少空间；查询的频率；更新的频率。查询多、更新少的 view 适合 materialize。</p>
+</div>
+
+<h2 id="updatability" data-short="View Updatability">4　能不能通过 view 改数据：View Updatability</h2>
+<p>注意区分两个方向：</p>
+<ul>
+<li><b>Base table 改了，view 跟着变</b>：这总是成立的。Virtual view 每次查询时重新算；materialized view 靠维护。</li>
+<li><b>通过 view 去改 base table</b>（对 view 执行 INSERT、UPDATE、DELETE）：这就是 <b>view updatability</b>，<b>不是所有 view 都可以</b>。</li>
+</ul>
+<p><b>原则：</b>一个 view 是 updatable 的，当且仅当对它的每个修改都能<b>没有歧义地</b>翻译成对 base table 里具体某些行的修改。</p>
+<div class="note key"><b>三条判断规则（课件第 33 页）</b><br>
+① 定义在<b>单张表</b>上、并且 view 的列里<b>包含这张表的 primary key</b> → <b>可以</b>更新。<br>
+② 用了<b>聚合函数</b>（AVG、COUNT、SUM 等）的 view → <b>不可以</b>。<br>
+③ 用 <b>join</b> 定义在多张表上的 view → <b>一般不可以</b>。</div>
+<p>课件的五个例子，Student(SID, Name, Age, GPA, Major)：</p>
+<div class="scroll"><table>
+<tr><th>View</th><th>对 view 的操作</th><th>结果</th><th>原因</th></tr>
+<tr><td rowspan="2">SELECT sid, gpa … WHERE gpa ≥ 6.0<br>（含主键 sid）</td><td>UPDATE … SET gpa = 6.5 WHERE sid = 546007</td><td>可以</td><td>靠 sid 能唯一确定 base table 里的那一行</td></tr>
+<tr><td>UPDATE … SET gpa = 5.0 WHERE sid = 546007</td><td>可以，但改完后这一行不再满足 gpa ≥ 6.0，从 view 里消失。如果 view 带 <b>WITH CHECK OPTION</b>，这次更新被<b>拒绝</b></td><td></td></tr>
+<tr><td>SELECT name, gpa … WHERE gpa ≥ 6.0<br>（不含主键）</td><td>INSERT … VALUES ('Jane', 6.0)</td><td>不可以</td><td>Jane 的 SID 是什么？主键为空，违反 entity integrity</td></tr>
+<tr><td>SELECT major, avg(gpa) … GROUP BY major</td><td>UPDATE … SET agpa = 5.0 WHERE major = 'IT'</td><td>不可以</td><td>要让平均值变成 5.0，各个学生的 gpa 有无穷多种改法</td></tr>
+</table></div>
+<p><b>WITH CHECK OPTION</b>：写在 CREATE VIEW 的最后。加了它之后，通过 view 做的 INSERT 和 UPDATE 必须让结果行仍然满足 view 的 WHERE 条件，否则被拒绝。</p>
+<div class="slides"><a href="#" data-sl="w02-30"><img width="1067" height="600" alt="Week02-Views.pdf 第 30 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-31"><img width="1067" height="600" alt="Week02-Views.pdf 第 31 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-32"><img width="1067" height="600" alt="Week02-Views.pdf 第 32 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-33"><img width="1067" height="600" alt="Week02-Views.pdf 第 33 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-34"><img width="1067" height="600" alt="Week02-Views.pdf 第 34 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-35"><img width="1067" height="600" alt="Week02-Views.pdf 第 35 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-36"><img width="1067" height="600" alt="Week02-Views.pdf 第 36 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-37"><img width="1067" height="600" alt="Week02-Views.pdf 第 37 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-38"><img width="1067" height="600" alt="Week02-Views.pdf 第 38 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week02-Views.pdf 第 30–38 页。点图片看大图。</p>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>一般不能更新的 view（课件第 44 页）</h3>
+<ul>
+<li>有的列是由<b>表达式或常量</b>算出来的：不能 insert 或 update，但可以 delete。</li>
+<li>有的列来自内置函数（聚合函数）。</li>
+<li>定义里用了 <b>GROUP BY、DISTINCT、HAVING、UNION</b> 或 UNION ALL。</li>
+<li>带相关子查询（correlated sub-query）的 view。</li>
+<li>定义在多张表上的 view。</li>
+<li>定义在不可更新的 view 之上的 view。</li>
+</ul>
+<h3>为什么 join 的 view 不好更新（课件第 42–43 页）</h3>
+<p>computer(id, type, room_num) 和 supervisor(name, room_num) 按 room_num 连接。同一个房间可以有多台电脑、多个 supervisor，这是多对多的关系，连接后 view 里的一行对应的是“某台电脑和某个 supervisor 的组合”。要删除 view 里房间 78-798 的一行：是删那台电脑，还是删那个 supervisor，还是两个都删？要改多少行？没有唯一的答案，所以不允许。</p>
+<p>课件的结语：view updatability 是很复杂的问题，多数 DBMS 采用简单的策略，例如凡是用 join 定义的 view 一律不可更新。View 本来就不是为更新设计的。</p>
+<div class="slides"><a href="#" data-sl="w02-41"><img width="1067" height="600" alt="Week02-Views.pdf 第 41 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-42"><img width="1067" height="600" alt="Week02-Views.pdf 第 42 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-43"><img width="1067" height="600" alt="Week02-Views.pdf 第 43 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-44"><img width="1067" height="600" alt="Week02-Views.pdf 第 44 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-45"><img width="1067" height="600" alt="Week02-Views.pdf 第 45 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week02-Views.pdf 第 41–45 页。点图片看大图。</p>
+<h3>Tutorial 2 Exercise 4 的 H 和 I</h3>
+<p><span class="label acc">官方答案</span>（Tut02-Views-2026(1).pdf 第 5 页）：</p>
+<ul>
+<li><b>H.</b> SeniorEmp (sname, sage, salary) <b>不可更新</b>，因为它不包含底层表的 primary key。改成包含 eid 就可以了：<code>CREATE VIEW SeniorEmp (sid, sname, sage, salary) AS SELECT eid, ename, age, salary FROM Emp WHERE age &gt; 50;</code></li>
+<li><b>I.</b> AvgSalaryByAge (age, avgSalary) <b>不可更新</b>，因为它包含聚合函数。</li>
+</ul>
+<h3>Tutorial 2 Exercise 3：对带聚合的 view 做查询</h3>
+<p>DEPT_SUMMARY (D, C, Total_S, Average_S) 是对 EMPLOYEE 按 Dno 分组，求人数、工资总和、平均工资。<span class="label acc">官方答案</span>：A 的结果有三行：(1, 1, 55000, 55000)、(5, 4, 133000, 33250)、(4, 3, 93000, 31000)。B（Total_S &gt; 100000）只有部门 5：(5, 4)。C（人数比部门 4 多的部门）：部门 4 有 3 人，只有部门 5 的 4 人更多，结果 (5, 33250)。</p>
+</div>
+
+<h2 id="tradeoff" data-short="Virtual 与 Materialized 对比">5　Virtual view 和 Materialized view 的对比</h2>
+<div class="scroll"><table>
+<tr><th></th><th>(Virtual) View</th><th>Materialized View</th></tr>
+<tr><td>Base table 被更新时</td><td>什么都不用做</td><td>要做 view maintenance（磁盘 I/O）</td></tr>
+<tr><td>查询 view 时</td><td>重新计算（re-compute）</td><td>直接用存好的结果（re-use）</td></tr>
+<tr><td>通过 view 更新</td><td colspan="2">只有包含 primary key、能唯一确定 base table 里的行时才可以</td></tr>
+<tr><td>适合</td><td>base table 经常变、view 查得不多</td><td>查询多、更新少，尤其是有聚合的 view</td></tr>
+</table></div>
+<div class="slides"><a href="#" data-sl="w02-39"><img width="1067" height="600" alt="Week02-Views.pdf 第 39 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w02-40"><img width="1067" height="600" alt="Week02-Views.pdf 第 40 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week02-Views.pdf 第 39、40 页。点图片看大图。</p>
+
+<h2 id="variants" data-short="进阶变式题">6　进阶变式题</h2>
+<p>这一章的题没法用程序自动验证，下面的答案是照 Tutorial 2 官方答案的做法手工推导的。</p>
+<div class="problem"><p class="title">变式 1　OR 条件 + 改名</p>
+<pre class="ra">CREATE VIEW Cheap (pid, pname, cost) AS
+  SELECT id, name, price
+  FROM   Product
+  WHERE  price < 20 OR category = 'Sale';
+
+SELECT pname FROM Cheap WHERE cost > 5 ORDER BY pname;</pre>
+<p>写出 query modification 之后实际执行的语句。</p></div>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>变式 1</summary><div class="body">
+<pre class="ra">SELECT name
+FROM   Product
+WHERE  (price < 20 OR category = 'Sale') AND price > 5
+ORDER BY name;</pre>
+<p>三处要改：view 名换成 Product；列名换回去（pname → name，cost → price）；view 的条件带着括号用 AND 接上。</p>
+</div></details>
+<div class="problem"><p class="title">变式 2　判断能否更新</p>
+<p>base table 是 Emp(eid, ename, age, salary, did)，eid 是主键。下面四个 view，哪些可以通过它 UPDATE？</p>
+<pre class="ra">V1: SELECT eid, ename, salary FROM Emp WHERE did = 5
+V2: SELECT ename, salary FROM Emp WHERE did = 5
+V3: SELECT did, MAX(salary) FROM Emp GROUP BY did
+V4: SELECT eid, salary * 12 AS annual FROM Emp</pre></div>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>变式 2</summary><div class="body">
+<ul>
+<li><b>V1：可以。</b>单表，包含主键 eid。</li>
+<li><b>V2：不可以。</b>不含主键，无法唯一确定要改哪一行（同名的人怎么办），插入时主键为空。这和 Tutorial 2 Exercise 4 H 相同。</li>
+<li><b>V3：不可以。</b>有聚合函数和 GROUP BY。</li>
+<li><b>V4：</b>annual 是表达式算出来的列，<b>不能</b> update 或 insert 这一列；按课件第 44 页，delete 是可以的（靠 eid 能确定行）。</li>
+</ul>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<div class="problem"><p class="title">变式 3　聚合 view 上的查询</p>
+<pre class="ra">CREATE VIEW DeptPay (dept, headcount, total) AS
+  SELECT did, COUNT(*), SUM(salary)
+  FROM   Emp
+  WHERE  age >= 18
+  GROUP BY did;
+
+SELECT dept, total FROM DeptPay WHERE headcount > 10 AND dept <> 3;</pre>
+<p>写出改写后的语句。</p></div>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>变式 3</summary><div class="body">
+<pre class="ra">SELECT did, SUM(salary)
+FROM   Emp
+WHERE  age >= 18 AND did <> 3
+GROUP BY did
+HAVING COUNT(*) > 10;</pre>
+<p>headcount 是聚合结果，对它的条件必须放进 HAVING。dept 是分组列，对它的条件放在 WHERE 里（先筛掉部门 3 再分组）或 HAVING 里都对，放 WHERE 更高效。</p>
+</div></details>
+</div>
+<p class="only-detail-hint">切换到“细化讲解”可以看到变式 3、join view 的问题和 Tutorial 2 的其余例题。</p>
+
+<h2 id="summary" data-short="本章小结">7　本章小结</h2>
+<ul>
+<li>View 是有名字的查询、虚拟的表；提供逻辑独立性、安全和方便。</li>
+<li>Query modification：把对 view 的查询改写成对 base table 的查询。</li>
+<li>Materialized view 把结果存在磁盘上，查询快，但需要维护。</li>
+<li>View updatability：单表且包含 primary key 的 view 可以更新；有聚合或 join 的一般不可以。</li>
+</ul>
+<div class="slides one"><a href="#" data-sl="w02-46"><img width="1067" height="600" alt="Week02-Views.pdf 第 46 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week02-Views.pdf 第 46 页。点图片看大图。</p>
+
+<h2 id="quiz" data-short="小测">8　小测</h2>
+<div class="quiz" data-quiz="quiz-data"></div>
+<script type="application/json" id="quiz-data">[
+{"id":"q1","q":"执行 DROP VIEW 之后，base table 里的数据会怎样？","options":["一起被删除","不受影响","变成只读","被复制到另一张表"],"answer":1,"why":"DROP VIEW 只是从 system catalogue 里删掉 view 的定义。Virtual view 本身不存数据。"},
+{"id":"q2","q":"View 定义是 SELECT name, age FROM Student WHERE major = 'IT' OR major = 'MM'。查询 SELECT name FROM v WHERE age > 19 被改写成什么？","options":["… WHERE major = 'IT' OR major = 'MM' AND age > 19","… WHERE (major = 'IT' OR major = 'MM') AND age > 19","… WHERE age > 19","… WHERE major = 'IT' AND major = 'MM' AND age > 19"],"answer":1,"why":"View 的条件要作为一个整体用 AND 接上，有 OR 时必须加括号，否则 AND 会先和后一个条件结合。"},
+{"id":"q3","q":"经常被查询、而且定义里有 SUM 和 GROUP BY 的 view，应该怎么实现？","options":["Virtual view","Materialized view","每次都改成查 base table","不能建这种 view"],"answer":1,"why":"聚合的计算代价高，materialized view 把结果存下来重复使用。代价是 base table 更新时要维护。"},
+{"id":"q4","q":"下面哪个 view 可以更新？Emp(eid, ename, salary, did)，eid 是主键。","options":["SELECT ename, salary FROM Emp","SELECT did, AVG(salary) FROM Emp GROUP BY did","SELECT eid, ename FROM Emp WHERE did = 5","SELECT DISTINCT did FROM Emp"],"answer":2,"why":"单表并且包含主键 eid。其余三个分别是：不含主键、有聚合、有 DISTINCT。"},
+{"id":"q5","q":"View 带 WITH CHECK OPTION，条件是 gpa ≥ 6.0。通过它把某个学生的 gpa 改成 5.0，会怎样？","options":["成功，该行从 view 里消失","被拒绝","成功，该行留在 view 里","view 被自动删除"],"answer":1,"why":"WITH CHECK OPTION 要求修改后的行仍然满足 view 的条件。5.0 不满足，所以被拒绝。不带这个选项时才会成功并从 view 里消失。"},
+{"id":"q6","q":"Query modification 的主要缺点是？","options":["占用磁盘空间","每次查询都要重新计算 view，定义复杂时效率低","不能用于单表 view","需要 view maintenance"],"answer":1,"why":"Virtual view 不存结果，每次都现算。占空间和需要维护是 materialized view 的代价。"},
+{"id":"q7","q":"View Majors(major, mtotal) 按 major 统计人数。查询 SELECT * FROM Majors WHERE mtotal > 100 改写后，mtotal > 100 这个条件变成？","options":["WHERE count(*) > 100","HAVING count(*) > 100","WHERE mtotal > 100","ORDER BY count(*)"],"answer":1,"why":"mtotal 是聚合结果，对聚合结果的条件只能写在 HAVING 里。"},
+{"id":"q8","q":"View 主要用于安全方面的哪一项？","options":["Authentication（你是谁）","Authorization（你被允许做什么）","Encryption","Non-repudiation"],"answer":1,"why":"课件第 11 页：Views are specifically used for authorization。"}
+]</script>
+
+<nav class="pager" aria-label="翻页"><a rel="prev" href="disk.html">← 第 7 章 磁盘与存储</a><a rel="next" href="constraints.html">第 9 章 Constraints 与 trigger →</a></nav>
+<p class="kbd-hint">键盘：<kbd>←</kbd> <kbd>→</kbd> 在小节之间翻页。</p>
+</div></main>
+</div>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

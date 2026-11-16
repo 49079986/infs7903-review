@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="quick">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 7 章 磁盘与存储 · INFS7903 期末复习</title>
+<link rel="stylesheet" href="../assets/css/site.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
+</head>
+<body data-chapter="disk" data-base="../">
+<header class="top">
+  <button type="button" class="icon-btn menu-btn" aria-label="打开目录">目录</button>
+  <a class="brand" href="../index.html">INFS7903 <small>期末复习</small></a>
+  <span class="grow"></span>
+  <span class="top-progress"></span>
+  <div class="seg" role="group" aria-label="阅读模式">
+    <button type="button" data-mode-btn="quick" aria-pressed="true">一天速通</button>
+    <button type="button" data-mode-btn="detail" aria-pressed="false">细化讲解</button>
+  </div>
+  <button type="button" class="icon-btn" data-theme-btn>深色</button>
+</header>
+<div class="shell">
+<nav class="side" aria-label="目录"></nav>
+<main><div class="doc">
+<p class="kicker">第 7 章 · WEEK 5 · STORAGE MANAGEMENT</p>
+<h1>磁盘与存储</h1>
+<p class="lede">Week 5 整节课：磁盘的结构和时间计算、记录怎么放进 block、三种文件结构。</p>
+<div class="meta"><span>速通约 35 分钟</span><span>2023 7 分，2024 11/50，2025 3/50</span></div>
+<h2 id="why" data-short="为什么关心磁盘">1　为什么数据库要关心磁盘</h2>
+<p>数据库的数据量很大，放不进内存，主体存在磁盘上。内存（RAM）快，是纳秒级，但贵、容量小，而且断电就丢（volatile）。磁盘慢，是毫秒级，但便宜、容量大、断电不丢。两者速度差几个数量级，所以<b>数据库的性能主要取决于读写磁盘的次数</b>，也就是 I/O 次数。</p>
+<ul>
+<li><b>READ</b>：把数据从磁盘传到内存。<b>WRITE</b>：把数据从内存传到磁盘。两者合称 I/O。</li>
+<li>存储分三层：Primary（RAM，放正在用的数据）、Secondary（HDD 或 SSD，放数据库主体）、Tertiary（光盘、磁带，放归档数据）。</li>
+</ul>
+<h3>I/O 的三个瓶颈（2024 Q3）</h3>
+<div class="scroll"><table>
+<tr><th>名称</th><th>意思</th><th>对策</th></tr>
+<tr><td><b>Queuing</b>（排队）</td><td>很多用户同时要读写同一个磁盘，请求要排队等</td><td>Buffering、prefetching（预读）</td></tr>
+<tr><td><b>Hotspot</b>（热点）</td><td>很多用户同时要访问同一块数据（同一张表或表的同一部分）</td><td>用多个磁盘给热点数据做镜像副本</td></tr>
+<tr><td><b>Latency</b>（延迟）</td><td>磁盘是机械装置，找到数据要等磁头移动、盘片旋转</td><td>把相关的数据放在连续的块里，减少 seek 和旋转</td></tr>
+</table></div>
+<div class="slides"><a href="#" data-sl="w05-9"><img width="1067" height="600" alt="Week05-Storage.pdf 第 9 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-10"><img width="1067" height="600" alt="Week05-Storage.pdf 第 10 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-11"><img width="1067" height="600" alt="Week05-Storage.pdf 第 11 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-12"><img width="1067" height="600" alt="Week05-Storage.pdf 第 12 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-13"><img width="1067" height="600" alt="Week05-Storage.pdf 第 13 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-14"><img width="1067" height="600" alt="Week05-Storage.pdf 第 14 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-15"><img width="1067" height="600" alt="Week05-Storage.pdf 第 15 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week05-Storage.pdf 第 9–15 页。点图片看大图。</p>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2024 Q3（2 分）：解释 Queuing、Hotspot、Latency</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="747" height="107" src="../assets/img/exam-2024-q3.webp" alt="2024 年试卷 Question 3"><figcaption>出处：EXAM/2024.pdf 第 3 页</figcaption></figure>
+<p class="ans-en">(1) Queuing: a delay caused when multiple users want to access (read or write) the same disk at the same time, so their I/O requests have to wait in a queue. (2) Hotspot: the same data item (e.g., a table or part of a table) is requested simultaneously by many users, so that part of the storage becomes overloaded. (3) Latency: the mechanical delay of a hard disk, i.e., the time spent on moving the head to the right track (seek time) and waiting for the block to rotate under the head (rotational delay), before data can be transferred.</p>
+<p>前两条的定义来自 Tutorial 5 Exercise 3 的官方答案；Latency 的定义来自课件第 20 页。</p>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<p><b>Buffer</b> 和 <b>cache</b> 都是内存：buffer 用来缓和 I/O 两边速度不匹配，cache 用来加快对常用数据的访问。<b>DMA</b>（Direct Memory Access）：由 CPU 发起，之后数据在内存和磁盘之间传输不需要 CPU 逐字节参与。<b>RAID</b>：用多块便宜的磁盘做冗余阵列。<b>SSD</b> 比 HDD 快，也更贵。</p>
+</div>
+
+<h2 id="parts" data-short="磁盘的结构">2　磁盘的结构</h2>
+<div class="slides"><a href="#" data-sl="w05-16"><img width="1067" height="600" alt="Week05-Storage.pdf 第 16 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-17"><img width="1067" height="600" alt="Week05-Storage.pdf 第 17 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-18"><img width="1067" height="600" alt="Week05-Storage.pdf 第 18 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-19"><img width="1067" height="600" alt="Week05-Storage.pdf 第 19 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week05-Storage.pdf 第 16–19 页。点图片看大图。</p>
+<div class="scroll"><table>
+<tr><th>部件</th><th>是什么</th></tr>
+<tr><td><b>Platter</b>（盘片）</td><td>一张张圆盘，可以单面或双面存数据。所有盘片装在同一根轴上，一起不停地转</td></tr>
+<tr><td><b>Surface</b>（盘面）</td><td>盘片的一面。双面盘片有 2 个 surface</td></tr>
+<tr><td><b>Track</b>（磁道）</td><td>盘面上的一个个同心圆环</td></tr>
+<tr><td><b>Sector</b>（扇区）</td><td>一条 track 被切成的小段</td></tr>
+<tr><td><b>Cylinder</b>（柱面）</td><td>所有盘面上<b>直径相同</b>的 track 合在一起。所以 cylinder 的个数 = 每个盘面的 track 数</td></tr>
+<tr><td><b>Head</b>（磁头）</td><td>读写数据的部件，每个盘面一个。任何时刻只有一个 head 在读写</td></tr>
+<tr><td><b>Arm</b>（磁臂）</td><td>带着所有 head 一起向里或向外移动，把 head 放到要的 track 上</td></tr>
+<tr><td><b>Block</b>（块）</td><td>磁盘和内存之间<b>传输数据的单位</b>，由同一条 track 上相邻的几个 sector 组成。操作系统里叫 page。大小通常 512 bytes 到 8 KB</td></tr>
+</table></div>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2024 Q1（3 分）：给磁盘结构图填部件名</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="718" height="331" src="../assets/img/exam-2024-q1.webp" alt="2024 年试卷 Question 1：在方框里填磁盘各部件的名称"><figcaption>出处：EXAM/2024.pdf 第 2 页</figcaption></figure>
+<p>要填的名字就是上表里的那些：Platter、Track、Sector、Cylinder、Head、Arm（arm assembly），可能还有 Spindle（中间的转轴）。对照课件第 16–18 页的图记位置：圆盘是 platter，盘面上的一圈是 track，track 上的一小段是 sector，上下对齐的一组 track 是 cylinder，伸到盘面上的杆是 arm，杆尖是 head。</p>
+<p><span class="label">没把握的地方</span>截图里的图是空白框，我无法确定每个框指向哪个部件，所以不能给出逐框的答案。</p>
+</div></details>
+
+<h2 id="calc" data-short="容量和时间计算">3　容量和时间的计算（常考）</h2>
+<p>读一个 block 要花三段时间：</p>
+<ol>
+<li><b>Seek time</b>（s）：arm 把 head 移到正确的 track 上。</li>
+<li><b>Rotational delay</b>（rd，也叫 latency）：等要读的 block 转到 head 下面。</li>
+<li><b>Block transfer time</b>（btt）：block 从 head 下面转过去、数据被读出来的时间。</li>
+</ol>
+<p>前两段是机械运动，比电子操作慢至少三个数量级，所以<b>它们占了绝大部分时间</b>。</p>
+<div class="note key"><b>全部公式</b><br>
+Track capacity = 每条 track 的 block 数 × block size<br>
+Cylinder 的个数 = 每个盘面的 track 数<br>
+Cylinder capacity = 盘面数 × track capacity　（盘面数 = 盘片数 × 2，如果是双面）<br>
+Disk capacity = cylinder 个数 × cylinder capacity<br>
+转一圈的时间 = 60,000 ÷ rpm　（msec）<br>
+Transfer rate tr = track capacity ÷ 转一圈的时间<br>
+Block transfer time btt = B ÷ tr<br>
+Average rotational delay rd = 转一圈的时间 ÷ 2<br>
+读 1 个 block = s + rd + btt<br>
+读 n 个<b>随机</b> block = n × (s + rd + btt)<br>
+读 n 个<b>连续</b> block = s + rd + n × btt</div>
+<p>最后两条的区别是考点：随机的块每一个都要重新 seek 和等旋转；连续的块只需要 seek 和等一次，然后一口气读完。</p>
+
+<h3>核心例题：Tutorial 5 Exercise 7（2023 Q1、2024 Q2 原题）</h3>
+<figure class="shot"><img loading="lazy" width="782" height="441" src="../assets/img/tut05-ex7-q.webp" alt="Tutorial 5 Exercise 7：B = 512 bytes，每条 track 20 个 block，每面 400 条 track，15 个双面盘片"><figcaption>出处：Tut05-Storage-2026(1).pdf 第 2 页</figcaption></figure>
+<p>2023 Q1 和 2024 Q2 用的是<b>完全相同的数字</b>，只是各挑了其中几问。下面的计算器默认填的就是这道题，可以改数字再算：</p>
+<div class="disk-tool"></div>
+<details class="answer"><summary><span class="label acc">官方答案</span>Tutorial 5 Exercise 7 Solution</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="798" height="369" src="../assets/img/tut05-ex7-sol.webp" alt="Tutorial 5 Exercise 7 官方答案"><figcaption>出处：Tut05-Storage-2026(1).pdf 第 5 页</figcaption></figure>
+<p><b>讲解：</b>计算器的结果已用程序和这份官方答案逐项核对。容易错的三处：</p>
+<ul>
+<li><b>C：</b>cylinder 跨所有盘面，15 个双面盘片是 30 个盘面，所以是 30 × 10,240，不是 15 ×。</li>
+<li><b>E-a：</b>先把转速换成“转一圈多少毫秒”：60,000 ÷ 3,000 = 20 msec。一圈正好读完一整条 track，所以 tr = 10,240 ÷ 20。</li>
+<li><b>G：</b>20 个随机块 820 msec，20 个连续块 60 msec，差了十几倍。</li>
+</ul>
+</div></details>
+<div class="shots">
+<figure class="shot"><img loading="lazy" width="749" height="379" src="../assets/img/exam-2023-q1.webp" alt="2023 年试卷 Question 1（7 分）"><figcaption>出处：EXAM/2023.pdf 第 2 页</figcaption></figure>
+<figure class="shot"><img loading="lazy" width="650" height="434" src="../assets/img/exam-2024-q2.webp" alt="2024 年试卷 Question 2（6 分）"><figcaption>出处：EXAM/2024.pdf 第 2 页</figcaption></figure>
+</div>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2023 Q1 和 2024 Q2（数字来自上面的官方答案）</summary><div class="body">
+<p><b>2023 Q1</b></p>
+<ul>
+<li>1-1　Track capacity = 20 × 512 = 10,240 bytes。</li>
+<li>1-2　题目这一年<b>没有给转速</b>，所以 rd 和 btt 算不出来。Tutorial 的原题是 3,000 rpm：rd = 10 msec，btt = 1 msec，结果是 30 + 10 + 1 = <b>41 msec</b>。答题时写明 “assume the disk rotates at 3,000 rpm”，试卷首页允许你指出题目缺少的信息。</li>
+<li>1-3　20 个随机块：20 × 41 = <b>820 msec</b>。20 个连续块：30 + 10 + 20 × 1 = <b>60 msec</b>。连续读快得多，因为只需要一次 seek 和一次旋转等待。</li>
+</ul>
+<p><b>2024 Q2</b></p>
+<ul>
+<li>2-1　Track：20 × 512 = 10,240 bytes。</li>
+<li>2-2　Cylinder：15 × 2 × 10,240 = 307,200 bytes。</li>
+<li>2-3　Disk：400 × 307,200 = 122,880,000 bytes = 122.88 Mbytes。</li>
+<li>2-4 (a)　tr = 10,240 ÷ 20 = 512 bytes/msec。</li>
+<li>2-4 (b)　btt = 512 ÷ 512 = 1 msec。</li>
+<li>2-4 (c)　rd = 20 ÷ 2 = 10 msec。</li>
+</ul>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>课件自己的例子（第 21–24 页）</h3>
+<p>Sector 512 bytes，每条 track 50 个 sector，每面 2,000 条 track，5 个双面盘片，5,400 rpm，average seek time 10 msec。</p>
+<ul>
+<li>Track capacity = 50 × 512 = 25,600 bytes。</li>
+<li>Surface capacity = 2,000 × 25,600 = 51,200,000 bytes。</li>
+<li>Disk capacity = 5 × 2 × 51,200,000 = 512,000,000 bytes。</li>
+<li>Maximum rotation delay = 转一圈的时间 = 60 ÷ 5,400 = 0.011 秒 = 11 msec。Average = 5.5 msec。</li>
+<li>Transfer rate = 25,600 ÷ 0.011 ≈ 2,304 Kbytes/秒（课件的数字）。</li>
+<li>读一整条 track 的平均时间 = seek 10 + average rotation delay 5.5 + 转一圈 11 = 26.5 msec。</li>
+</ul>
+<div class="slides"><a href="#" data-sl="w05-20"><img width="1067" height="600" alt="Week05-Storage.pdf 第 20 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-21"><img width="1067" height="600" alt="Week05-Storage.pdf 第 21 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-22"><img width="1067" height="600" alt="Week05-Storage.pdf 第 22 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-23"><img width="1067" height="600" alt="Week05-Storage.pdf 第 23 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-24"><img width="1067" height="600" alt="Week05-Storage.pdf 第 24 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-25"><img width="1067" height="600" alt="Week05-Storage.pdf 第 25 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week05-Storage.pdf 第 20–25 页。点图片看大图。</p>
+</div>
+
+<h2 id="records" data-short="记录怎么放进 block">4　记录怎么放进 block</h2>
+<p>一个 <b>file</b> 是一串 block，每个 block 里放若干条 <b>record</b>。I/O 以 block 为单位，但应用程序操作的是 record。</p>
+<div class="note key"><b>三个公式</b><br>
+Record size R = 各字段长度之和（题目说有 deletion marker 就再加 1）<br>
+<b>Blocking factor</b> bfr = ⌊B ÷ R⌋　（一个 block 能放几条完整的记录，<b>向下</b>取整）<br>
+Block 数 b = ⌈N ÷ bfr⌉　（N 条记录要几个 block，<b>向上</b>取整）<br>
+每个 block 浪费的空间 = B − bfr × R</div>
+<p>向下取整是因为 <b>unspanned</b> organization：一条记录不能跨两个 block，放不下一整条就空着。</p>
+<h3>Fixed-length 和 variable-length records</h3>
+<div class="scroll"><table>
+<tr><th></th><th>Fixed-length（定长）</th><th>Variable-length（变长）</th></tr>
+<tr><td>做法</td><td>每个字段占固定的字节数，例如 CHAR(24)</td><td>字段按实际长度存，例如 VARCHAR2(24)。在字段前记长度，或者在字段后放分隔符</td></tr>
+<tr><td>优点</td><td>不用存长度或分隔符；每个字段的位置可以直接算出来，访问任何字段一样快；插入、删除、更新简单</td><td>没有 record internal fragmentation，省空间</td></tr>
+<tr><td>缺点</td><td>Block internal fragmentation（bfr 向下取整留下的空）；record internal fragmentation（每个字段都按最大长度占位）；占空间多，所以读同样多的记录要更多次磁盘访问</td><td>要访问后面的字段必须先扫过前面的字段；删除记录后空出来的位置不好重用；记录变长时没有地方长，要搬走</td></tr>
+</table></div>
+<div class="slides"><a href="#" data-sl="w05-27"><img width="1067" height="600" alt="Week05-Storage.pdf 第 27 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-30"><img width="1067" height="600" alt="Week05-Storage.pdf 第 30 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-31"><img width="1067" height="600" alt="Week05-Storage.pdf 第 31 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-32"><img width="1067" height="600" alt="Week05-Storage.pdf 第 32 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-33"><img width="1067" height="600" alt="Week05-Storage.pdf 第 33 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-34"><img width="1067" height="600" alt="Week05-Storage.pdf 第 34 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-35"><img width="1067" height="600" alt="Week05-Storage.pdf 第 35 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-36"><img width="1067" height="600" alt="Week05-Storage.pdf 第 36 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-37"><img width="1067" height="600" alt="Week05-Storage.pdf 第 37 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-38"><img width="1067" height="600" alt="Week05-Storage.pdf 第 38 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week05-Storage.pdf 第 27、30–38 页。点图片看大图。</p>
+
+<h3>例题：Tutorial 5 Exercise 8</h3>
+<figure class="shot"><img loading="lazy" width="808" height="306" src="../assets/img/tut05-ex8-q.webp" alt="Tutorial 5 Exercise 8：20,000 条 STUDENT 记录，B = 512"><figcaption>出处：Tut05-Storage-2026(1).pdf 第 2 页</figcaption></figure>
+<details class="answer"><summary><span class="label acc">官方答案</span>Tutorial 5 Exercise 8 Solution</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="751" height="142" src="../assets/img/tut05-ex8-sol.webp" alt="Tutorial 5 Exercise 8 官方答案"><figcaption>出处：Tut05-Storage-2026(1).pdf 第 5 页</figcaption></figure>
+<p><b>讲解：</b>R = 十个字段共 112 bytes，加 1 个 deletion marker = 113。bfr = ⌊512 ÷ 113⌋ = ⌊4.53⌋ = 4。b = 20,000 ÷ 4 = 5,000。这三个数已用程序核对。</p>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>Tutorial 5 Exercise 9：变长记录、spanned</h3>
+<p>题目在 Tut05-Storage-2026(1).pdf 第 2 页，官方答案在第 5 页，这里讲思路。每个出现的字段多 1 byte 的 field type；另有 1 byte deletion marker 和 1 byte end-of-record marker。</p>
+<ul>
+<li>一定出现的六个字段：(30+1) + (9+1) + (40+1) + (8+1) + (1+1) + (4+1) + 1 + 1 = 100 bytes。</li>
+<li>不一定出现的四个字段，按出现的比例取平均：(9+1) × 0.80 + (4+1) × 0.85 + (4+1) × 0.15 + (3+1) × 0.90 = 16.6 bytes。</li>
+<li>平均 R = 116.6 bytes。</li>
+<li><b>Spanned</b>：记录可以跨 block，所以不用算 bfr，直接用总字节数除。每个 block 有 5 bytes 的指针不能放记录，可用 507 bytes。b = ⌈20,000 × 116.6 ÷ 507⌉ = ⌈4,599.6⌉ = 4,600。</li>
+</ul>
+</div>
+
+<h2 id="files" data-short="三种文件结构">5　三种文件结构</h2>
+<div class="scroll"><table>
+<tr><th></th><th>Heap file（无序）</th><th>Ordered / sequential file（有序）</th><th>Hash file</th></tr>
+<tr><td>记录怎么放</td><td>没有顺序，新记录追加到末尾或任何有空位的 block</td><td>按 ordering field（sort key）排好序</td><td>用 hash function 对 hash key 算出 bucket 号，记录放进那个 bucket</td></tr>
+<tr><td>插入</td><td><b>快</b></td><td><b>慢</b>：要找到正确的位置，可能要挪动记录。可以先放进一个无序的 overflow file，定期合并</td><td>快</td></tr>
+<tr><td>按 key 等值查找</td><td><b>慢</b>：linear search，平均读一半的 block</td><td>快：binary search，log<sub>2</sub> b 次</td><td><b>最快</b>：算出 bucket 直接去读</td></tr>
+<tr><td>范围查找</td><td>慢：全部扫描</td><td><b>快</b>：二分找到起点，然后顺着读</td><td>不适合：hash 不保持顺序</td></tr>
+<tr><td>适合</td><td>典型访问是全表扫描；只写（write-only）的数据</td><td>要按顺序取记录，或者只取一个范围；只读（read-only）的数据</td><td>等值查询（equality selection）；频繁读写的数据</td></tr>
+</table></div>
+<div class="slides"><a href="#" data-sl="w05-39"><img width="1067" height="600" alt="Week05-Storage.pdf 第 39 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-41"><img width="1067" height="600" alt="Week05-Storage.pdf 第 41 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-42"><img width="1067" height="600" alt="Week05-Storage.pdf 第 42 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-43"><img width="1067" height="600" alt="Week05-Storage.pdf 第 43 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-44"><img width="1067" height="600" alt="Week05-Storage.pdf 第 44 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-45"><img width="1067" height="600" alt="Week05-Storage.pdf 第 45 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-46"><img width="1067" height="600" alt="Week05-Storage.pdf 第 46 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-47"><img width="1067" height="600" alt="Week05-Storage.pdf 第 47 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-51"><img width="1067" height="600" alt="Week05-Storage.pdf 第 51 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-52"><img width="1067" height="600" alt="Week05-Storage.pdf 第 52 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-53"><img width="1067" height="600" alt="Week05-Storage.pdf 第 53 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-54"><img width="1067" height="600" alt="Week05-Storage.pdf 第 54 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-55"><img width="1067" height="600" alt="Week05-Storage.pdf 第 55 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-56"><img width="1067" height="600" alt="Week05-Storage.pdf 第 56 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week05-Storage.pdf 第 39、41–47、51–56 页。点图片看大图。</p>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2025 Q5（3 分）：heap file 的优缺点；什么时候用 ordered file，什么时候用 hash file</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="745" height="145" src="../assets/img/exam-2025-q5.webp" alt="2025 年试卷 Question 5"><figcaption>出处：EXAM/2025.pdf 第 4 页</figcaption></figure>
+<p><b>5-1</b></p>
+<p class="ans-en">An unordered heap file is the simplest file structure: records are stored in no particular order, and a new record is simply appended at the end of the file (or placed in any block with free space). Advantage: insertion is very efficient. Disadvantage: searching for a record requires a linear scan of the file blocks (on average half of the blocks for a search on a unique attribute), so retrieval is slow; deleted records also leave unused space.</p>
+<p><b>5-2</b></p>
+<p class="ans-en">Ordered (sequential) files are used when records must be retrieved in the order of the ordering key, or when only a range of records is needed: binary search finds the first record and the rest are read sequentially. They suit read-mostly data, because insertion is expensive. Hash files are used for equality selections on the hash key: the bucket address is computed by the hash function, so a record is found in about one block access. They are not suitable for range searches.</p>
+</div></details>
+
+<h3>例题：Tutorial 5 Exercise 5（I/O 次数对比）</h3>
+<p>文件一共 M 个 block。<span class="label acc">官方答案</span>（Tut05-Storage-2026(1).pdf 第 4 页）：</p>
+<div class="scroll"><table>
+<tr><th>文件类型</th><th>Scan file</th><th>Equality search</th><th>Range search</th><th>Insert</th></tr>
+<tr><td>Heap file</td><td>M</td><td>0.5M</td><td>M</td><td>2</td></tr>
+<tr><td>Sequential file</td><td>M</td><td>log<sub>2</sub>M</td><td>log<sub>2</sub>M + 匹配的 block 数</td><td>log<sub>2</sub>M + M</td></tr>
+<tr><td>Hash file</td><td>M</td><td>1 + overflow</td><td>range size</td><td>2 + overflow</td></tr>
+</table></div>
+<p><b>讲解：</b>Heap 等值查找平均读一半（0.5M）；插入是读出最后一个 block 再写回，2 次 I/O。Sequential 等值查找用二分；插入要先二分找到位置，再挪动后面的记录，最坏要动 M 个 block。Hash 等值查找直接算地址，1 次，有 overflow 再加；范围查找只能对范围里的每个值各查一次。</p>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>Heap file 怎么管理 block（课件第 43–44 页）</h3>
+<ul>
+<li><b>Linked list</b>：一个 header block 引出两条链，一条串起所有装满的 block，一条串起还有空位的 block。每个 block 里有 2 个指针。</li>
+<li><b>Block directory</b>：用一组目录块记录每个数据 block 的位置和剩余空间。目录比数据小得多。</li>
+</ul>
+<p>删除记录时只是把它标记为 invalid（这就是 deletion marker 的用途），空位以后可以给新记录用。</p>
+<h3>Binary search（课件第 48–50 页）</h3>
+<p>每次读中间那个 block，比较后丢掉一半。256 个 block：128 → 64 → … → 1，一共 8 步，log<sub>2</sub> 256 = 8。所以在有 b 个 block 的有序文件上查找要 log<sub>2</sub> b 次 I/O。只有按 <b>ordering key</b> 查才能二分；按其他字段查还是 linear search。</p>
+<h3>Hash file 的问题（课件第 55 页）</h3>
+<ul>
+<li><b>Collision</b>：新记录 hash 到的 bucket 已经满了，只好放进 overflow 区，用指针串起来。为了减少 overflow，hash file 一般只装到 70–80% 满。</li>
+<li>Hash function 应该把记录均匀分散到各个 bucket，否则 overflow 多，查找变慢。</li>
+<li>Static hashing 的 bucket 数 m 是固定的，文件变大或变小时都不合适。</li>
+</ul>
+<div class="slides"><a href="#" data-sl="w05-48"><img width="1067" height="600" alt="Week05-Storage.pdf 第 48 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-49"><img width="1067" height="600" alt="Week05-Storage.pdf 第 49 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w05-50"><img width="1067" height="600" alt="Week05-Storage.pdf 第 50 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week05-Storage.pdf 第 48–50 页。点图片看大图。</p>
+<h3>Tutorial 5 Exercise 6：数据的三个阶段该用什么文件</h3>
+<p><span class="label acc">官方答案</span>（第 5 页）：只读的数据用 <b>sequential file</b>（可以按 search key 顺序读和二分查找）；只写的数据用 <b>heap file</b>（新记录直接追加到末尾）；读写都频繁且不可预测的数据用 <b>hash file</b>（hash function 把记录均匀分散到各个 block）。</p>
+</div>
+
+<h2 id="example-big" data-short="综合题：Tutorial 5 Ex 10">6　综合例题：Tutorial 5 Exercise 10</h2>
+<figure class="shot"><img loading="lazy" width="809" height="714" src="../assets/img/tut05-ex10-q.webp" alt="Tutorial 5 Exercise 10：EMPLOYEE 文件，30,000 条记录，B = 2,400 bytes，s = 20，rd = 10，btt = 1"><figcaption>出处：Tut05-Storage-2026(1).pdf 第 3 页</figcaption></figure>
+<p>这道题把第 3、4、5 节的公式串在一起。先自己算 A 到 G。</p>
+<details class="answer"><summary><span class="label acc">官方答案</span>Tutorial 5 Exercise 10 Solution</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="796" height="730" src="../assets/img/tut05-ex10-sol.webp" alt="Tutorial 5 Exercise 10 官方答案"><figcaption>出处：Tut05-Storage-2026(1).pdf 第 6 页</figcaption></figure>
+<p><b>讲解：</b></p>
+<ul>
+<li><b>A：</b>R = 124 + 1 = 125。bfr = ⌊2,400 ÷ 125⌋ = ⌊19.2⌋ = 19。b = ⌈30,000 ÷ 19⌉ = ⌈1,578.9⌉ = 1,579。</li>
+<li><b>B：</b>每块浪费 2,400 − 19 × 125 = 25 bytes。</li>
+<li><b>C：</b>这次没给转速，但给了 btt，所以反过来算：tr = B ÷ btt = 2,400 bytes/msec。</li>
+<li><b>D：</b>Linear search：按 key 查平均读一半，b ÷ 2 = 789.5 个 block；按非 key 查要读完，1,579 个。</li>
+<li><b>E：</b>连续存放：s + rd + n × btt = 20 + 10 + 789.5 = 819.5 msec。</li>
+<li><b>F：</b>分散存放：n × (s + rd + btt) = 789.5 × 31 = 24,474.5 msec。比 E 慢约 30 倍。</li>
+<li><b>G：</b>Binary search：⌈log<sub>2</sub> 1,579⌉ = 11 次，每次都是一个随机块，11 × 31 = 341 msec。</li>
+</ul>
+<p>A、B、E、F、G 的数字已用程序核对。</p>
+</div></details>
+
+<h2 id="variants" data-short="进阶变式题">7　进阶变式题</h2>
+<p>答案由本页计算器所用的程序算出。程序先用 Tutorial 5 Exercise 7、8、10 的官方答案核对过。</p>
+<div class="problem"><p class="title">变式 1　换一组磁盘参数</p>
+<p>B = 4,096 bytes，每条 track 64 个 block，每面 1,000 条 track，8 个双面盘片，7,200 rpm，average seek time 9 msec。求 track、cylinder、disk 的容量，tr、btt、rd，以及读 100 个随机 block 和 100 个连续 block 各要多久。</p></div>
+<details class="answer"><summary><span class="label">程序生成的答案</span>变式 1</summary><div class="body">
+<ul>
+<li>Track = 64 × 4,096 = 262,144 bytes。Cylinder = 8 × 2 × 262,144 = 4,194,304 bytes。Disk = 1,000 × 4,194,304 = 4,194,304,000 bytes。</li>
+<li>转一圈 = 60,000 ÷ 7,200 = 8.333 msec。tr = 262,144 ÷ 8.333 = 31,457.28 bytes/msec。</li>
+<li>btt = 4,096 ÷ 31,457.28 = 0.130 msec（也等于 8.333 ÷ 64）。rd = 4.167 msec。</li>
+<li>读 1 个 block = 9 + 4.167 + 0.130 = 13.297 msec。</li>
+<li>100 个随机 block = 1,329.7 msec。100 个连续 block = 9 + 4.167 + 100 × 0.130 = 26.19 msec。</li>
+</ul>
+<p>把这些数字填进第 3 节的计算器可以看到同样的结果。这里连续的 100 个块超过了一条 track 的 64 个，公式仍按题目惯例用 s + rd + n × btt（同一个 cylinder 里换盘面不需要 seek）。</p>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<div class="problem"><p class="title">变式 2　记录、block 和查找时间</p>
+<p>一个 ORDER 文件有 N = 100,000 条定长记录，字段共 95 bytes，另加 1 byte deletion marker，unspanned。B = 1,024 bytes，s = 12 msec，rd = 6 msec，btt = 0.5 msec。求 R、bfr、b、每块浪费的空间；按 key 做 linear search（连续存放和分散存放）与 binary search 的平均时间。</p></div>
+<details class="answer"><summary><span class="label">程序生成的答案</span>变式 2</summary><div class="body">
+<ul>
+<li>R = 96 bytes。bfr = ⌊1,024 ÷ 96⌋ = 10。b = ⌈100,000 ÷ 10⌉ = 10,000 blocks。每块浪费 1,024 − 960 = 64 bytes。</li>
+<li>Linear search 平均读 b ÷ 2 = 5,000 个 block。</li>
+<li>连续存放：12 + 6 + 5,000 × 0.5 = 2,518 msec。</li>
+<li>分散存放：5,000 × (12 + 6 + 0.5) = 92,500 msec。</li>
+<li>Binary search：⌈log<sub>2</sub> 10,000⌉ = 14 次，14 × 18.5 = 259 msec。</li>
+</ul>
+</div></details>
+</div>
+<p class="only-detail-hint">切换到“细化讲解”可以看到变式 2、变长记录的例题和三种文件结构的更多细节。</p>
+
+<h2 id="summary" data-short="本章小结">8　本章小结</h2>
+<ul>
+<li>磁盘能永久保存数据，但慢，靠机械运动找数据；RAM 快，但贵而且 volatile。</li>
+<li>数据访问的三个瓶颈：Queuing、Hotspot、Latency。</li>
+<li>读一个 block 的时间 = seek time + rotational delay + block transfer time，前两项占主导。</li>
+<li>Block 是磁盘和内存之间传输的单位；bfr = ⌊B ÷ R⌋。</li>
+<li>三种文件：heap（写快、查慢）、ordered（按序读和范围查找好、插入慢）、hash（等值查找最快）。</li>
+</ul>
+<div class="slides one"><a href="#" data-sl="w05-57"><img width="1067" height="600" alt="Week05-Storage.pdf 第 57 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week05-Storage.pdf 第 57 页。点图片看大图。</p>
+
+<h2 id="quiz" data-short="小测">9　小测</h2>
+<div class="quiz" data-quiz="quiz-data"></div>
+<script type="application/json" id="quiz-data">[
+{"id":"q1","q":"磁盘转速 3,000 rpm。Average rotational delay 是多少？","options":["20 msec","10 msec","5 msec","1 msec"],"answer":1,"why":"转一圈 = 60,000 ÷ 3,000 = 20 msec。平均等半圈，10 msec。"},
+{"id":"q2","q":"15 个双面盘片，每面 400 条 track。一共有多少个 cylinder？","options":["15","30","400","12,000"],"answer":2,"why":"Cylinder 是所有盘面上同一直径的 track 的集合，所以个数等于每面的 track 数：400。"},
+{"id":"q3","q":"s = 30，rd = 10，btt = 1（msec）。读 20 个连续的 block 要多久？","options":["820 msec","60 msec","41 msec","240 msec"],"answer":1,"why":"连续的块只 seek 和等旋转一次：30 + 10 + 20 × 1 = 60。随机的 20 块才是 20 × 41 = 820。"},
+{"id":"q4","q":"B = 512 bytes，R = 113 bytes，unspanned。Blocking factor 是多少？","options":["4","5","4.53","113"],"answer":0,"why":"bfr = ⌊512 ÷ 113⌋ = ⌊4.53⌋ = 4。记录不能跨 block，所以向下取整。"},
+{"id":"q5","q":"哪种文件结构插入最快，但按 key 查找要 linear scan？","options":["Ordered file","Hash file","Heap file","B+-tree"],"answer":2,"why":"Heap file 把新记录直接追加到末尾，插入快；记录没有顺序，查找只能扫描。"},
+{"id":"q6","q":"经常做 “WHERE sid BETWEEN 100 AND 200” 这样的范围查询，数据文件用哪种结构最好？","options":["Heap file","Ordered file（按 sid 排序）","Hash file（按 sid hash）","都一样"],"answer":1,"why":"有序文件可以二分找到起点，然后顺着读。Hash 不保持顺序，不适合范围查询。"},
+{"id":"q7","q":"为什么 seek time 和 rotational delay 在磁盘 I/O 里占主导？","options":["因为数据量大","因为它们是机械运动，比电子操作慢几个数量级","因为 block 太小","因为 CPU 太慢"],"answer":1,"why":"Tutorial 5 Exercise 2-4 的官方答案：它们操纵物理部件，机械上比电子上至少慢三个数量级。"},
+{"id":"q8","q":"Fixed-length record 的一个缺点是？","options":["访问后面的字段要先扫描前面的字段","每个字段按最大长度占位，浪费空间（internal fragmentation）","不能计算字段的位置","删除记录很复杂"],"answer":1,"why":"定长记录的每个字段都按最大长度分配，短的值后面是浪费的空间。选项一是变长记录的缺点。"}
+]</script>
+
+<nav class="pager" aria-label="翻页"><a rel="prev" href="ra.html">← 第 6 章 关系代数 RA</a><a rel="next" href="views.html">第 8 章 Views →</a></nav>
+<p class="kbd-hint">键盘：<kbd>←</kbd> <kbd>→</kbd> 在小节之间翻页。</p>
+</div></main>
+</div>
+<script src="../assets/js/tools-core.js"></script>
+<script src="../assets/js/tools-ui.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

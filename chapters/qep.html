@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="quick">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 5 章 查询处理与优化 · INFS7903 期末复习</title>
+<link rel="stylesheet" href="../assets/css/site.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
+</head>
+<body data-chapter="qep" data-base="../">
+<header class="top">
+  <button type="button" class="icon-btn menu-btn" aria-label="打开目录">目录</button>
+  <a class="brand" href="../index.html">INFS7903 <small>期末复习</small></a>
+  <span class="grow"></span>
+  <span class="top-progress"></span>
+  <div class="seg" role="group" aria-label="阅读模式">
+    <button type="button" data-mode-btn="quick" aria-pressed="true">一天速通</button>
+    <button type="button" data-mode-btn="detail" aria-pressed="false">细化讲解</button>
+  </div>
+  <button type="button" class="icon-btn" data-theme-btn>深色</button>
+</header>
+<div class="shell">
+<nav class="side" aria-label="目录"></nav>
+<main><div class="doc">
+<p class="kicker">第 5 章 · WEEKS 8–9 · QUERY PROCESSING AND OPTIMISATION</p>
+<h1>查询处理与优化：selectivity、成本和 QEP</h1>
+<p class="lede">Week 8 和 Week 9 两节课：一句 SQL 在内部怎么执行，怎么估算代价，怎么把查询树一步步优化。</p>
+<div class="meta"><span>速通约 70 分钟</span><span>QEP：2022 17 分，2024 5/50，2025 7/50</span><span>Selectivity：2022 4 分，2023 2 分</span><span>成本计算：2022 40 分</span></div>
+<h2 id="pipeline" data-short="SQL 怎么被执行">1　一句 SQL 是怎么被执行的</h2>
+<p>SQL 只说“要什么”，不说“怎么做”。DBMS 拿到 SQL 后分三步：</p>
+<ol>
+<li><b>SQL Parser</b>：检查语法，把 SQL 翻译成内部形式，也就是 <b>relational algebra（RA）表达式</b>。</li>
+<li><b>Query Execution Planner（optimizer）</b>：同一个查询有很多种<b>等价</b>的 RA 写法，执行起来快慢差别很大。Optimizer 从中挑一个好的，叫 <b>Query Execution Plan（QEP）</b>。</li>
+<li><b>Query Executor</b>：按 QEP 去读数据，返回结果。</li>
+</ol>
+<p>这两周课件从头到尾用同一个例子：</p>
+<pre class="ra">Student (ID, Program, Other)          25,000 条
+Course (Code, Title)                   4,000 条
+Enrolment (StID, CrsID, Grade)       100,000 条
+
+查询：找出拿到 Grade 7 的学生的 Program 和对应课程的 Title
+
+SELECT course.Title, student.Program
+FROM   student, course, enrolment
+WHERE  enrolment.StID = student.ID AND
+       enrolment.CrsID = course.Code AND
+       enrolment.Grade = 7;</pre>
+<p>RA 里三个基本运算：<b>σ</b>（selection，选行，对应 WHERE 的条件）、<b>π</b>（projection，选列，对应 SELECT 后面的列）、<b>⋈</b>（join，连接）。RA 的细节在下一章。</p>
+<div class="slides"><a href="#" data-sl="w08-4"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 4 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-5"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 5 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-8"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 8 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-9"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 9 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week08-QPO-01(1).pdf 第 4、5、8、9 页。点图片看大图。</p>
+
+<h2 id="cost" data-short="三种运算的代价">2　三种运算各有多贵</h2>
+<p>代价用<b>要处理的 tuple 数</b>来估计。设表有 N 行：</p>
+<div class="scroll"><table>
+<tr><th>运算</th><th>代价</th><th>N = 1,000 时</th><th>说明</th></tr>
+<tr><td>Selection σ</td><td>N（线性扫描）；有序或有索引时是 log N</td><td>1,000</td><td><b>便宜</b></td></tr>
+<tr><td>Projection π</td><td>N × (1 + log N)</td><td>4,000</td><td>要排序去重，<b>贵</b></td></tr>
+<tr><td>Join ⋈（sort-merge）</td><td>N(1 + log N) + M(1 + log M)</td><td>8,000（M 也是 1,000）</td><td>两张表各排序再合并，<b>很贵</b></td></tr>
+<tr><td>Cartesian product ×</td><td>N × M</td><td>1,000,000</td><td><b>最贵</b>，要避免</td></tr>
+</table></div>
+<p>上表的数字是课件用 log<sub>10</sub> 算的。结论（课件第 24 页）：<b>Selection 比 Projection 和 Join 便宜得多</b>；Projection 和 Join 的代价增长得比行数快。</p>
+<div class="slides"><a href="#" data-sl="w08-10"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 10 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-11"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 11 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-13"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 13 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-23"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 23 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-24"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 24 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week08-QPO-01(1).pdf 第 10、11、13、23、24 页。点图片看大图。</p>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>Selection 的实现方式（课件第 12 页）</h3>
+<p>简单条件（如 σ<sub>Salary = 40,000</sub>）：linear search（代价 N）、binary search（log<sub>2</sub> N）、用 primary index 或 hash key、用 clustering index 取多条记录、用 secondary index（B+-tree）。复合条件（如 Salary &gt; 40,000 AND Car_Owner = Yes）：用其中一个条件的索引、用 composite index、或者分别用索引取出记录指针再求交集。</p>
+<h3>三种 Join 算法（课件第 14–22 页）</h3>
+<ul>
+<li><b>Nested-loop join</b>：对 R 的每条记录，把 S 从头到尾扫一遍，逐条比较。最慢。</li>
+<li><b>Single-loop join</b>：S 的连接属性上有索引时用。对 R 的每条记录，拿它的值去 S 的索引里查（probe）。只有一层循环。</li>
+<li><b>Sort-merge join</b>：R 和 S 都按连接属性排好序。两个指针 r、s 各指一张表的开头：r &lt; s 就把 r 往前移；r &gt; s 就把 s 往前移；r = s 就输出这一对，再移 s。直到一张表走完。</li>
+</ul>
+<p>Tutorial 9 Exercise 1 F 问“按代价从小到大排列各种 join”，可以答：有索引的 single-loop join 最便宜，其次 sort-merge join，nested-loop join 更贵，Cartesian product 最贵。</p>
+<div class="slides"><a href="#" data-sl="w08-12"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 12 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-14"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 14 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-15"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 15 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-16"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 16 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-17"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 17 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-18"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 18 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-19"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 19 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-20"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 20 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-21"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 21 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-22"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 22 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week08-QPO-01(1).pdf 第 12、14–22 页。点图片看大图。</p>
+</div>
+
+<h2 id="two-plans" data-short="两个 QEP 的代价对比">3　同一个查询，两种做法差多少</h2>
+<p>假设 5% 的 enrolment 是 Grade 7。</p>
+<p><b>做法一：先连接，最后才筛选</b>　π<sub>Title,Program</sub>(σ<sub>Grade=7</sub>(student ⋈ enrolment ⋈ course))</p>
+<div class="scroll"><table>
+<tr><th>步骤</th><th>结果行数</th><th>课件给的代价</th></tr>
+<tr><td>T1 ← student ⋈ enrolment</td><td>100,000</td><td>2,158,162</td></tr>
+<tr><td>T2 ← T1 ⋈ course</td><td>100,000</td><td>1,818,694</td></tr>
+<tr><td>T3 ← σ<sub>Grade=7</sub> T2</td><td>5,000</td><td>100,000</td></tr>
+<tr><td>Result ← π<sub>Title,Program</sub> T3</td><td>5,000</td><td>66,649</td></tr>
+<tr><td colspan="2"><b>合计</b></td><td><b>约 4.143 million</b></td></tr>
+</table></div>
+<p><b>做法二：先筛选，再连接</b>　π<sub>Title,Program</sub>(π<sub>CrsID,Program</sub>(student ⋈ σ<sub>Grade=7</sub> enrolment) ⋈ course)</p>
+<div class="scroll"><table>
+<tr><th>步骤</th><th>结果行数</th><th>课件给的代价</th></tr>
+<tr><td>T1 ← σ<sub>Grade=7</sub> enrolment</td><td>5,000</td><td>100,000</td></tr>
+<tr><td>T2 ← student ⋈ T1</td><td>5,000</td><td>458,145</td></tr>
+<tr><td>T3 ← π<sub>CrsID,Program</sub> T2</td><td>5,000</td><td>66,650</td></tr>
+<tr><td>T4 ← T3 ⋈ course</td><td>5,000</td><td>52,000</td></tr>
+<tr><td>Result ← π<sub>Title,Program</sub> T4</td><td>5,000</td><td>66,650</td></tr>
+<tr><td colspan="2"><b>合计</b></td><td><b>743,445</b></td></tr>
+</table></div>
+<p>只是把便宜的 σ 提到前面，把 100,000 行先减到 5,000 行，总代价就降到原来的不到五分之一。这就是后面“selection 下推”规则的来历。</p>
+<div class="note"><b>为什么连接后的行数是 100,000？</b>enrolment.StID 是指向 student.ID 的外键，每条 enrolment 正好配上一个 student，所以连接结果的行数等于外键那一侧的行数。有外键的连接，结果大小由外键那张表决定。</div>
+<div class="slides"><a href="#" data-sl="w08-25"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 25 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-26"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 26 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-27"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 27 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-28"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 28 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-29"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 29 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w08-30"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 30 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week08-QPO-01(1).pdf 第 25–30 页。点图片看大图。</p>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<p><span class="label">说明</span>我用课件的公式 join(N, M) = N(1 + log<sub>2</sub> N) + M(1 + log<sub>2</sub> M) 重算：join(25,000; 100,000) ≈ 2,151,205，join(100,000; 4,000) ≈ 1,812,827，join(25,000; 5,000) ≈ 456,680，和课件的数字相差不到 1%，应该是取整方式不同。但 join(5,000; 4,000) 我算出来约 118,302，课件写的是 52,000，对不上。考试如果让你算，写出公式和代入过程，结论（做法二便宜得多）不受影响。</p>
+<h3>Tutorial 8 Exercise 4：估算连接结果的大小</h3>
+<figure class="shot"><img loading="lazy" width="856" height="468" src="../assets/img/tut08-ex4-q.webp" alt="Tutorial 8 Exercise 4：Customer、Invoice、LineItem、Product 四张表的连接"><figcaption>出处：Tut08-QP-2026.pdf 第 3 页</figcaption></figure>
+<details class="answer"><summary><span class="label acc">官方答案</span>Tutorial 8 Exercise 4 Solution</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="851" height="503" src="../assets/img/tut08-ex4-sol.webp" alt="Tutorial 8 Exercise 4 官方答案"><figcaption>出处：Tut08-QP-2026.pdf 第 5 页</figcaption></figure>
+<p><b>讲解：</b>A：Customer ⋈ Invoice 的大小由外键一侧的 Invoice 决定，1.2 million；LineItem ⋈ Product 由 LineItem 决定，12 million；再把两者连起来还是 12 million。B：代价是三次 join 之和，先连小的更便宜；如果第一步就把 LineItem 拉进来，之后每一步的中间结果都是 12 million 行，更贵。C：结果只输出 customer 的 Type，Type 只有 5 个不同的值，所以最多 5 行。</p>
+</div></details>
+</div>
+
+<h2 id="approaches" data-short="Cost-based 与 Rule-based">4　两种优化方法</h2>
+<ul>
+<li><b>Cost-based（deterministic）</b>：把所有可能的执行计划列出来，估算每一个的代价，选最小的。</li>
+<li><b>Rule-based（heuristics）</b>：用经验规则（rules of thumb）找一个好的计划，避开差的。</li>
+</ul>
+<p>多数 DBMS 偏向 rule-based，因为在执行之前估算每个计划的代价本身就有开销（课件第 25 页的总结）。经验规则就是把上一节的结论一般化：</p>
+<ul>
+<li>Selection 便宜，而且能减少行数 → <b>尽早做</b>，在树里尽量往下推。</li>
+<li>Projection 贵，但能减少列 → 也尽量往下推。</li>
+<li>Join 贵 → <b>放到最后</b>；先做涉及小表的 join。</li>
+<li><b>避免 Cartesian product</b>。</li>
+</ul>
+<div class="slides"><a href="#" data-sl="w09-2"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 2 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w09-3"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 3 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week09-QPO-02.pdf 第 2、3 页。点图片看大图。</p>
+
+<h2 id="selectivity" data-short="Cardinality 与 Selectivity">5　Cardinality 和 Selectivity</h2>
+<p><b>Cardinality</b>（一个 attribute 的）：这一列有多少个<b>不同的值</b>，NDV（number of distinct values）。例如 Name 几乎每行都不同，cardinality 很高；Car_Owner 只有 Yes、No，cardinality 是 2。</p>
+<p><b>Selectivity</b>（一个查询条件的）：满足条件的记录数 ÷ 总记录数，在 0 到 1 之间。</p>
+<div class="scroll"><table>
+<tr><th>条件</th><th>Selectivity S</th><th>例子</th></tr>
+<tr><td>key 上的等值条件</td><td>1 / |R|</td><td>σ<sub>ESSN=13455673</sub>：只有 1 条满足</td></tr>
+<tr><td>有 n 个不同值的 attribute 上的等值条件（假设均匀分布）</td><td>1 / n</td><td>Car_Owner 有 2 个值，S = 1/2；type 有 4 个值，S = 1/4</td></tr>
+</table></div>
+<p>满足条件的记录数估计为 <b>|R| × S</b>。例如 200 万部电影，S = 0.1，约 20 万条。</p>
+<div class="note key"><b>注意课件的用词。</b>S 的数值<b>越小</b>，条件越“selective”（筛掉的行越多）。课件说 “high selectivity” 时指的是<b>筛选能力强</b>，也就是 cardinality 高、S 的数值小。所以课件的结论是：<b>cardinality 越高，selectivity 越高</b>。</div>
+<p>它们在查询优化里的用处：</p>
+<ul>
+<li><b>做 Selection：先用 strongly selective 的条件。</b>课件的例子：200 万部电影里，Drama 有 50 万部，Nicole Kidman 演的只有 79 部。应该先取出 Nicole Kidman 的 79 部，再看其中哪些是 Drama。</li>
+<li><b>做 Projection：先处理 weakly selective（不同值少）的 attribute。</b>因为 projection 要去重，不同值少，去重后的结果就小。</li>
+</ul>
+<div class="slides"><a href="#" data-sl="w09-4"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 4 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w09-5"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 5 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w09-6"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 6 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w09-7"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 7 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w09-8"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 8 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w09-9"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 9 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w09-10"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 10 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w09-11"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 11 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w09-12"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 12 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w09-13"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 13 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week09-QPO-02.pdf 第 4–13 页。点图片看大图。</p>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2023 Q11-1：cardinality 和 selectivity 的定义与用途</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="748" height="1133" src="../assets/img/exam-2023-q11.webp" alt="2023 年试卷 Question 11"><figcaption>出处：EXAM/2023.pdf 第 13 页</figcaption></figure>
+<p class="ans-en">The cardinality of an attribute is its number of distinct values (NDV). The selectivity of an attribute (of a search condition on it) is the ratio of the number of records that satisfy the condition to the total number of records; it is between 0 and 1. For an equality condition on an attribute with n distinct values (uniform distribution), S = 1/n; on a key, S = 1/|R|. So an attribute with high cardinality is highly selective.<br><br>
+Usage: these statistics are stored in the system catalog and used by the query optimizer to estimate the sizes of intermediate results (|R| × S) and to choose the best query execution plan. Selections on strongly selective attributes should be done first because they produce small tables; projections on weakly selective attributes produce small tables. Selectivity also helps decide which index to use.</p>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<p><b>System catalogue（data dictionary）</b>里存着优化要用的信息：schema（包括 view 的定义）、key 和 foreign key、表的大小、attribute 的 cardinality、selectivity 的直方图（histogram）、有哪些索引。直方图记录实际分布，比“假设均匀分布”更准。</p>
+<p><b>DBMS 怎么知道 selectivity？</b>设计者声明了 key；不同值少的 attribute 通常来自固定列表；有些 attribute 是外键；DBMS 也可以在执行 selection 或 projection 时顺便统计。</p>
+</div>
+
+<h2 id="rules" data-short="RA 等价变换">6　RA 的等价变换规则</h2>
+<p>优化之所以可行，是因为 RA 有一套改写规则，改写前后结果相同（课件第 14 页）：</p>
+<div class="scroll"><table>
+<tr><th>规则</th><th>写法</th><th>用在哪</th></tr>
+<tr><td>σ 可以拆开（cascade）</td><td>σ<sub>c1 ∧ c2</sub>(R) = σ<sub>c1</sub>(σ<sub>c2</sub>(R))</td><td>把 WHERE 里用 AND 连起来的条件拆成一个个 σ，才能分别下推</td></tr>
+<tr><td>σ 可以交换</td><td>σ<sub>c1</sub>(σ<sub>c2</sub>(R)) = σ<sub>c2</sub>(σ<sub>c1</sub>(R))</td><td>调整 σ 的先后</td></tr>
+<tr><td>⋈ 可以交换</td><td>A ⋈ B = B ⋈ A</td><td rowspan="2">调整 join 的顺序（Rule 3）</td></tr>
+<tr><td>⋈ 可以结合</td><td>(A ⋈ B) ⋈ C = A ⋈ (B ⋈ C)</td></tr>
+<tr><td>σ 可以分配到 ⋈ 里</td><td>σ<sub>P</sub>(A ⋈ B) = σ<sub>P1</sub>(A) ⋈ σ<sub>P2</sub>(B)</td><td>Selection 下推（Rule 1）</td></tr>
+<tr><td>π 可以复制到 ⋈ 下面</td><td>π<sub>C</sub>(A ⋈ B) = π<sub>C</sub>(π<sub>CX</sub>(A) ⋈ π<sub>CY</sub>(B))</td><td>Projection 下推（Rule 4）</td></tr>
+</table></div>
+<p>还有一条贯穿始终：<b>join 等价于在 Cartesian product 上做 selection</b>，σ<sub>条件</sub>(A × B) = A ⋈<sub>条件</sub> B。</p>
+<div class="slides one"><a href="#" data-sl="w09-14"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 14 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week09-QPO-02.pdf 第 14 页。点图片看大图。</p>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>Tutorial 8 Exercise 1：哪些变换是合法的</h3>
+<p>R(A, B, C, D)，S(D, E, F)，⋈ 是在 D 上的 natural join。官方答案（Tut08-QP-2026.pdf 第 4 页）：</p>
+<ul>
+<li><b>A.</b> π<sub>A,B</sub>(π<sub>A,B,C,D</sub>(R ⋈ S)) = π<sub>A,B</sub>(R ⋈ S)：<b>Valid</b>。</li>
+<li><b>B.</b> σ<sub>A&gt;15 or B&lt;10 or C=20</sub>(R) = σ<sub>A&gt;15</sub>(σ<sub>B&lt;10</sub>(σ<sub>C=20</sub>(R)))：<b>Invalid</b>。只有 AND 才能拆成嵌套的 σ；这里是 OR，嵌套会把只满足其中一个条件的行筛掉。</li>
+<li><b>C.</b> π<sub>A,B</sub>(σ<sub>C&lt;12</sub>(R)) = σ<sub>C&lt;12</sub>(π<sub>A,B</sub>(R))：<b>Invalid</b>。先投影就把 C 丢了，后面没法按 C 筛选。</li>
+<li><b>D.</b> π<sub>A,F</sub>(R ⋈ S) = π<sub>A</sub>(R) ⋈ π<sub>F</sub>(S)：<b>Invalid</b>。投影把连接要用的 D 丢了。</li>
+</ul>
+<p>C 和 D 告诉你 Rule 4 的要点：<b>往下推 π 时，必须保留上面还要用的列</b>（筛选条件里的列、连接条件里的列）。</p>
+<h3>其他化简（课件第 15–16 页）</h3>
+<p>R ∪ R = R，R ∩ R = R，R ⋈ R = R，R − R = ∅，R ∪ ∅ = R，R ∩ ∅ = ∅。σ 可以分配到 ∪、∩ 上：σ<sub>C</sub>(R ∪ S) = σ<sub>C</sub>(R) ∪ σ<sub>C</sub>(S)。</p>
+<p><b>CNF</b>（conjunctive normal form）：若干项用 AND 连接，每一项内部用 OR，例如 (program = 'BIT' ∨ mark &gt; 50) ∧ course_no = 'INFS2200'。<b>DNF</b>（disjunctive normal form）：若干项用 OR 连接，每一项内部用 AND。两者可以用 De Morgan 定律互相转换。</p>
+<div class="slides"><a href="#" data-sl="w09-15"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 15 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w09-16"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 16 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week09-QPO-02.pdf 第 15、16 页。点图片看大图。</p>
+</div>
+
+<h2 id="qep" data-short="QEP 四条规则">7　QEP 树的优化：四条规则（必考）</h2>
+<p>考题给你 SQL 和初始的树，要你一步步画出优化过程，<b>每一步写出用的规则和理由</b>。先看初始树（canonical tree）怎么来的：</p>
+<ul>
+<li>SELECT 后面的列 → 最顶上的 <b>π</b>。</li>
+<li>WHERE 里每个条件 → 一个 <b>σ</b>，叠在一起。</li>
+<li>FROM 里的表 → 用 <b>×</b>（Cartesian product）连起来，放在最下面。</li>
+</ul>
+<p>树是<b>从下往上</b>执行的，所以越靠下的运算越早做。</p>
+<div class="scroll"><table>
+<tr><th>规则</th><th>做什么</th><th>理由</th></tr>
+<tr><td><b>Rule 1</b>　Push down selections</td><td>每个 σ 尽量往下推：只涉及一张表的条件（Grade = 7）推到那张表的正上方；连接条件推到刚好包含两张表的那个 × 上方</td><td>Selection 便宜，尽早减少行数。先做最有限制性的 selection</td></tr>
+<tr><td><b>Rule 2</b>　Turn × into ⋈</td><td>× 上方紧挨着连接条件的 σ，把两者合并成一个 ⋈</td><td>Join 比“先做 Cartesian product 再筛选”便宜得多</td></tr>
+<tr><td><b>Rule 3</b>　Most restrictive join first</td><td>调整 join 的顺序，让结果小的 join 先做（放在下面）</td><td>中间结果越小，后面的 join 越便宜。课件：course 有 4,000 行，少于 student 的 25,000 行，所以先和 course 连接</td></tr>
+<tr><td><b>Rule 4</b>　Push down projections</td><td>在每张表（或中间结果）上方加 π，只留下最终要输出的列和后面连接要用的列</td><td>去掉用不到的列，减小中间结果</td></tr>
+</table></div>
+<div class="slides"><a href="#" data-sl="w09-17"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 17 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w09-18"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 18 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w09-19"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 19 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w09-20"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 20 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w09-21"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 21 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w09-22"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 22 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w09-23"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 23 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week09-QPO-02.pdf 第 17–23 页。点图片看大图。</p>
+<h3>课件例题一步步重放（也是 2024 Q7）</h3>
+<div class="qep-walk" data-cfg='{"A":{"name":"student","rows":25000,"key":"ID","out":["Program"],"attrs":3},"B":{"name":"course","rows":4000,"key":"Code","out":["Title"],"attrs":2},"M":{"name":"enrolment","rows":100000,"fkA":"StID","fkB":"CrsID","sel":"Grade=7"},"project":["Title","Program"]}'></div>
+<p>最后一步得到的表达式和课件第 22 页的 Final optimized QEP 一致（工具的输出已用程序和课件核对）：</p>
+<pre class="ra">π Title,Program (
+   π StID,Title ( π StID,CrsID ( σ Grade=7 (enrolment) )  ⋈ CrsID=Code  course )
+   ⋈ StID=ID
+   π ID,Program (student) )</pre>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>Rule 4 里每个 π 留哪些列</h3>
+<ul>
+<li>enrolment 筛选之后：Grade 已经用完，只留 <b>StID</b>（后面和 student 连接要用）和 <b>CrsID</b>（和 course 连接要用）。</li>
+<li>course：只有 Code 和 Title 两列，两列都要用，所以不需要加 π（课件图里把 π<sub>Title,Code</sub> 写在括号里，表示可有可无）。</li>
+<li>和 course 连接之后：CrsID、Code 已经用完，留 <b>StID</b>（还要连接）和 <b>Title</b>（最终输出）。</li>
+<li>student：Other 用不到，留 <b>ID</b>（连接）和 <b>Program</b>（输出）。</li>
+</ul>
+<p>检查方法：每个 π 留的列 = 最终要输出的列 + 它上方还没做的连接要用的列。</p>
+<h3>课件第 23 页的流程总结</h3>
+<ol>
+<li>把 SQL 转成 canonical RA 表达式和初始树（多个表用 × 连起来）。</li>
+<li>下推 selection（Rule 1）；有些 × 会变成 ⋈（Rule 2）；多个表连接时用二元 join，先做最 selective 的。</li>
+<li>用约束和常量化简（Rule 3）。</li>
+<li>下推 projection（Rule 4）。</li>
+<li>其他优化策略，例如公共子表达式。</li>
+</ol>
+</div>
+
+<h2 id="example-exam" data-short="真题：2024 Q7、2025 Q8">8　真题：2024 Q7 和 2025 Q8</h2>
+<figure class="shot"><img loading="lazy" width="748" height="779" src="../assets/img/exam-2025-q8.webp" alt="2025 年试卷 Question 8（7 分）：Worker、Project、Work_On 的 QEP 优化"><figcaption>出处：EXAM/2025.pdf 第 5 页</figcaption></figure>
+<p>2024 Q7 就是课件原例（上一节的重放）。2025 Q8 换成了 Worker（2,500）、Project（400）、Work_On（10,000），结构完全相同。答题页给了四个 “Rule:” 的格子和一个 “The Final QEP Tree”。</p>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2025 Q8 的四步（程序按课件的四条规则生成）</summary><div class="body">
+<div class="qep-walk" data-grid data-cfg='{"A":{"name":"Worker","rows":2500,"key":"ID","out":["Name"],"attrs":3},"B":{"name":"Project","rows":400,"key":"PID","out":["Title"],"attrs":2},"M":{"name":"Work_On","rows":10000,"fkA":"WrkID","fkB":"PrjID","sel":"Completion=&#39;Yes&#39;"},"project":["Title","Name"]}'></div>
+<p>每一格里要写的理由：</p>
+<ul>
+<li><b>Rule 1：</b>σ<sub>Completion='Yes'</sub> 只涉及 Work_On，推到 Work_On 正上方，尽早减少行数；两个连接条件各自推到对应的 × 上方。</li>
+<li><b>Rule 2：</b>σ<sub>ID=WrkID</sub> 和它下面的 × 合并成 ⋈<sub>ID=WrkID</sub>；σ<sub>PrjID=PID</sub> 同理。Join 比 Cartesian product 便宜。</li>
+<li><b>Rule 3：</b>Project 只有 400 行，少于 Worker 的 2,500 行，所以筛选后的 Work_On 先和 <b>Project</b> 连接，再和 Worker 连接。</li>
+<li><b>Rule 4：</b>Work_On 筛选后只留 WrkID、PrjID；和 Project 连接后留 WrkID、Title；Worker 只留 ID、Name（去掉 Age）。</li>
+</ul>
+<p>最终表达式：</p>
+<pre class="ra">π Title,Name (
+   π WrkID,Title ( π WrkID,PrjID ( σ Completion='Yes' (Work_On) )  ⋈ PrjID=PID  Project )
+   ⋈ WrkID=ID
+   π ID,Name (Worker) )</pre>
+<p><span class="label">说明</span>试卷初始树最顶上印的是 π<sub>Title, Program</sub>，和题目文字里的 π<sub>Title, Name</sub> 不一致，看起来是从 2024 年的题复制时没改。按试卷首页的说明，可以在答案里指出这一点，然后按 Title, Name 作答。</p>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<figure class="shot"><img loading="lazy" width="748" height="880" src="../assets/img/exam-2024-q7.webp" alt="2024 年试卷 Question 7（5 分）"><figcaption>出处：EXAM/2024.pdf 第 6 页</figcaption></figure>
+<p>2024 Q7 的答案就是第 7 节的重放。2022 年的卷子（另一位老师的风格）里 QEP 占 17 分，另有 40 分是代价计算，今年的课件对代价计算只讲到第 3 节的程度。</p>
+</div>
+
+<h2 id="example-tut" data-short="例题：Tutorial 9">9　例题：Tutorial 9 Exercise 1（四张表）</h2>
+<figure class="shot"><img loading="lazy" width="810" height="674" src="../assets/img/tut09-ex1-q.webp" alt="Tutorial 9 Exercise 1：Customer、Invoice、LineItem、Product，问 SQL、selectivity、查询树优化等"><figcaption>出处：Tut09-Query-Op-2026-v1.pdf 第 1 页</figcaption></figure>
+<details class="answer"><summary><span class="label acc">官方答案</span>Tutorial 9 Exercise 1 Solution（A、B 和 Step 1）</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="777" height="1018" src="../assets/img/tut09-ex1-sol.webp" alt="Tutorial 9 Exercise 1 官方答案第一部分"><figcaption>出处：Tut09-Query-Op-2026-v1.pdf 第 2 页。Step 2 到 Step 5 的树在原文件第 3–4 页，是图片，请直接打开 PDF 看。</figcaption></figure>
+<p><b>讲解：</b></p>
+<ul>
+<li><b>B：</b>Type 有 5 个不同值，selectivity = 1/5 = 0.2；ProdType 有 10 个，selectivity = 1/10 = 0.1。</li>
+<li><b>C：</b>五步和第 7 节一样：canonical tree → 下推 selection → × 换成 ⋈ → 选便宜的 join 顺序 → 下推 projection。</li>
+<li><b>E：</b>可以马上做的 selection 有两个：Product 上 ProdType = Widget，结果约 1,000 × 1/10 = 100 行；Invoice 上 Month = July，结果约 1,200,000 × 1/12 = 100,000 行。</li>
+<li><b>D：</b>最终的 π<sub>Type</sub> 只能最后做；其他 π 要等用到它的列的 join 做完才能去掉那些列。</li>
+<li><b>F：</b>官方答案把四张表的 join 拆成：Customer ⋈ 七月的 Invoice（结果 100,000）；七月的 Invoice ⋈ LineItem（结果 1,000,000）；再 ⋈ Widget 类的 Product（结果 100,000）；最后把两边连起来。</li>
+</ul>
+</div></details>
+
+<h2 id="variants" data-short="进阶变式题">10　进阶变式题</h2>
+<div class="problem"><p class="title">变式 1　小表在另一侧</p>
+<pre class="ra">Member (MID, MName, Phone, Addr)        8,000 条
+Book (ISBN, BTitle, Year)              50,000 条
+Loan (MemID, BookID, Status)          200,000 条
+
+SELECT Member.MName, Book.BTitle
+FROM   Member, Loan, Book
+WHERE  Member.MID = Loan.MemID AND Loan.BookID = Book.ISBN
+       AND Loan.Status = 'Overdue';</pre>
+<p>画出初始树和四步优化，写出最终表达式。</p></div>
+<details class="answer"><summary><span class="label">程序生成的答案</span>变式 1</summary><div class="body">
+<div class="qep-walk" data-grid data-cfg='{"A":{"name":"Member","rows":8000,"key":"MID","out":["MName"],"attrs":4},"B":{"name":"Book","rows":50000,"key":"ISBN","out":["BTitle"],"attrs":3},"M":{"name":"Loan","rows":200000,"fkA":"MemID","fkB":"BookID","sel":"Status=&#39;Overdue&#39;"},"project":["MName","BTitle"]}'></div>
+<p>和真题不同的两点：这次是 <b>Member</b>（8,000）比 Book（50,000）小，所以 Rule 3 先和 Member 连接；Book 有三列，Year 用不到，所以 Book 上方也要加 π<sub>ISBN,BTitle</sub>。生成这个答案的程序先用课件第 22 页的最终 QEP 核对过。</p>
+<pre class="ra">π MName,BTitle (
+   π BookID,MName ( π MemID,BookID ( σ Status='Overdue' (Loan) )  ⋈ MemID=MID  π MID,MName (Member) )
+   ⋈ BookID=ISBN
+   π ISBN,BTitle (Book) )</pre>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<div class="problem"><p class="title">变式 2　两张表上都有筛选条件</p>
+<p>沿用课件的三张表，查询改成：找出 Program = 'BIT' 的学生拿到 Grade 7 的课程 Title。</p>
+<pre class="ra">SELECT course.Title
+FROM   student, enrolment, course
+WHERE  student.ID = enrolment.StID AND enrolment.CrsID = course.Code
+       AND enrolment.Grade = 7 AND student.Program = 'BIT';</pre>
+<p>假设 Program 有 100 个不同的值，Grade 7 占 5%。写出优化后的表达式，并估算两个 selection 之后的行数。</p></div>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>变式 2（手工推导，没有程序验证）</summary><div class="body">
+<p><b>Selection 之后的行数：</b>σ<sub>Grade=7</sub>(enrolment)：100,000 × 5% = 5,000 行。σ<sub>Program='BIT'</sub>(student)：selectivity = 1/100，25,000 × 1/100 = 250 行。</p>
+<p><b>Rule 1：</b>两个单表条件各自推到自己的表上方。<b>Rule 2：</b>两个 × 变成 ⋈。<b>Rule 3：</b>现在筛选后的 student 只有 250 行，比 course 的 4,000 行小得多，所以先和 <b>student</b> 连接（和课件原例的顺序相反）。<b>Rule 4：</b>student 筛选后只留 ID；连接后只留 CrsID；course 两列都要用。</p>
+<pre class="ra">π Title (
+   π CrsID ( π StID,CrsID ( σ Grade=7 (enrolment) )  ⋈ StID=ID  π ID ( σ Program='BIT' (student) ) )
+   ⋈ CrsID=Code
+   course )</pre>
+<p>要点：Rule 3 比的是<b>筛选之后</b>的大小，不是原表的大小。</p>
+</div></details>
+</div>
+<p class="only-detail-hint">切换到“细化讲解”可以看到变式 2、Tutorial 8 的例题和 RA 变换规则的练习。</p>
+
+<h2 id="summary" data-short="本章小结">11　本章小结</h2>
+<ul>
+<li>RA 表达式表达 SQL 的语义；查询处理的结果是一个高效的 QEP。QEP 是一棵查询树，从下往上执行。</li>
+<li>代价主要由要处理的 tuple 数决定。Selection 便宜，Projection 和 Join 贵，Cartesian product 最贵。</li>
+<li>优化有 cost-based 和 rule-based 两种；多数 DBMS 用 rule-based，因为执行前估算代价有开销。</li>
+<li>Selectivity = 满足条件的记录数 ÷ 总记录数。Cardinality 越高，selectivity 越高。</li>
+<li>高 selectivity 对 selection 有利，低 selectivity 对 projection 有利。</li>
+<li>四条规则：下推 selection；× 换成 ⋈；最有限制性的 join 先做；下推 projection。</li>
+</ul>
+<div class="slides one"><a href="#" data-sl="w08-31"><img width="1067" height="600" alt="Week08-QPO-01(1).pdf 第 31 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week08-QPO-01(1).pdf 第 31 页。点图片看大图。</p>
+<div class="slides one"><a href="#" data-sl="w09-25"><img width="1067" height="600" alt="Week09-QPO-02.pdf 第 25 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week09-QPO-02.pdf 第 25 页。点图片看大图。</p>
+
+<h2 id="quiz" data-short="小测">12　小测</h2>
+<div class="quiz" data-quiz="quiz-data"></div>
+<script type="application/json" id="quiz-data">[
+{"id":"q1","q":"QEP 优化的第一条规则是什么？","options":["把 Cartesian product 换成 join","把 selection 尽量往下推","把 projection 尽量往下推","调整 join 的顺序"],"answer":1,"why":"Rule 1：Push down selections。Selection 便宜，而且能尽早减少行数。"},
+{"id":"q2","q":"Worker 有 2,500 行，Project 有 400 行。筛选后的 Work_On 应该先和谁连接？","options":["Worker，因为它更大","Project，因为它更小","都可以，没有区别","先做 Worker × Project"],"answer":1,"why":"Rule 3：最有限制性的 join 先做。和小表连接，中间结果更小。"},
+{"id":"q3","q":"Customer 表的 Type 有 5 个不同的值（均匀分布）。条件 Type = 'Gold' 的 selectivity 是多少？","options":["5","0.5","0.2","1 / |Customer|"],"answer":2,"why":"有 n 个不同值的 attribute 上的等值条件，S = 1/n = 1/5 = 0.2。这是 Tutorial 9 Exercise 1 B。"},
+{"id":"q4","q":"按课件的代价估计，下面哪个运算最便宜？","options":["Selection","Projection","Join","Cartesian product"],"answer":0,"why":"Selection 的代价是 N（有索引时是 log N）；Projection 是 N(1 + log N)；Join 更贵；Cartesian product 最贵。"},
+{"id":"q5","q":"π A,B (σ C<12 (R)) 能不能改写成 σ C<12 (π A,B (R))？","options":["能，σ 和 π 总是可以交换","不能，因为先投影就把 C 丢了","不能，因为 σ 必须在最外层","能，只要 R 有索引"],"answer":1,"why":"投影的列里没有 C，先做 π 之后就没法按 C 筛选了。这是 Tutorial 8 Exercise 1 C。"},
+{"id":"q6","q":"student（25,000）⋈ enrolment（100,000），enrolment.StID 是指向 student.ID 的外键。结果有多少行？","options":["25,000","100,000","125,000","2,500,000,000"],"answer":1,"why":"每条 enrolment 正好配上一个 student，结果行数等于外键那一侧的行数：100,000。"},
+{"id":"q7","q":"Rule 4 下推 projection 时，每个 π 应该保留哪些列？","options":["只保留最终要输出的列","只保留主键","最终要输出的列，加上后面连接还要用的列","所有列"],"answer":2,"why":"连接条件要用的列如果被去掉，后面的 join 就做不了。"},
+{"id":"q8","q":"为什么多数 DBMS 用 rule-based 方法优化查询树？","options":["因为 rule-based 一定能找到最优计划","因为执行前估算每个计划的代价本身有开销","因为 cost-based 方法是错的","因为 SQL 是过程式语言"],"answer":1,"why":"课件第 25 页的总结：evaluating query cost before execution incurs overhead。Rule-based 用经验规则找一个好的计划。"}
+]</script>
+
+<nav class="pager" aria-label="翻页"><a rel="prev" href="recovery.html">← 第 4 章 Recovery</a><a rel="next" href="ra.html">第 6 章 关系代数 RA →</a></nav>
+<p class="kbd-hint">键盘：<kbd>←</kbd> <kbd>→</kbd> 在小节之间翻页。</p>
+</div></main>
+</div>
+<script src="../assets/js/tools-core.js"></script>
+<script src="../assets/js/tools-ui.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

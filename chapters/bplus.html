@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="quick">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 1 章 索引与 B+ 树 · INFS7903 期末复习</title>
+<link rel="stylesheet" href="../assets/css/site.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
+</head>
+<body data-chapter="bplus" data-base="../">
+<header class="top">
+  <button type="button" class="icon-btn menu-btn" aria-label="打开目录">目录</button>
+  <a class="brand" href="../index.html">INFS7903 <small>期末复习</small></a>
+  <span class="grow"></span>
+  <span class="top-progress"></span>
+  <div class="seg" role="group" aria-label="阅读模式">
+    <button type="button" data-mode-btn="quick" aria-pressed="true">一天速通</button>
+    <button type="button" data-mode-btn="detail" aria-pressed="false">细化讲解</button>
+  </div>
+  <button type="button" class="icon-btn" data-theme-btn>深色</button>
+</header>
+<div class="shell">
+<nav class="side" aria-label="目录"></nav>
+<main><div class="doc">
+<p class="kicker">第 1 章 · WEEK 6 · DATABASE INDEXING</p>
+<h1>索引与 B+ 树</h1>
+<p class="lede">Week 6 整节课：为什么要索引、各种索引类型、多层索引，最后是每年必考的 B+ 树插入和删除。</p>
+<div class="meta"><span>速通约 90 分钟</span><span>B+ 树：2022 8 分，2023 10 分，2024 6/50，2025 7/50</span><span>索引概念和 bitmap：2023 7 分，2025 4/50</span></div>
+<h2 id="why" data-short="为什么要索引">1　为什么要索引</h2>
+<p>索引（index）是一个<b>辅助文件</b>，里面是一条条 <code>&lt;字段值, 指向记录的指针&gt;</code>，按字段值排好序。它的作用和书后面的索引一样：先在索引里找到“页码”，再直接翻到那一页，不用把整本书从头读到尾。建索引的那个字段叫 <b>search key</b>。</p>
+<p>没有索引时只能 <b>linear search</b>（从头扫到尾）。课件的例子：Student 表有 30,000 条记录，查 First_Name = 'David'，即使第一条就是 David 也得把 30,000 条全部看完，因为不知道后面还有没有。</p>
+<div class="note key"><b>三句要记住的话</b>（课件第 1 页和第 49 页的总结）：索引由 DBA 或程序员<b>创建和删除</b>；由 DBMS <b>自动维护、透明使用</b>（数据一改，索引自动跟着改）；索引不能滥建，因为数据频繁更新时维护索引会带来额外的 I/O。</div>
+<div class="slides"><a href="#" data-sl="w06-1"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 1 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-6"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 6 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-7"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 7 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-8"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 8 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week06-Indexing.pdf 第 1、6–8 页。点图片看大图。</p>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>课件里的两个数字例子</h3>
+<p><b>连接也受益。</b>Worker 表 100 条，WorkerSkill 表 500 条（外键指向 Worker.Name）。做连接时要扫多少条？不是 100 × 500 = 50,000，而是正好 500 条，因为每条 WorkerSkill 通过外键只对应一个 Worker（课件原话：the foreign key dominates the join）。</p>
+<p><b>Linear search 有多慢。</b>假设每秒能扫 10<sup>5</sup> 条记录，一家银行有 10<sup>7</sup> 个账户，每个账户每天一笔交易。每笔交易都线性扫描一次，一天的交易要 10<sup>7</sup> × 10<sup>7</sup> ÷ 10<sup>5</sup> = 10<sup>9</sup> 秒，约 31 年。</p>
+<h3>三种查找方式的块访问次数（课件第 12 页）</h3>
+<p>Employee 表按 SSN 排序，r = 10,000 条记录，块大小 B = 512 bytes，每条记录 250 bytes。</p>
+<div class="scroll"><table>
+<tr><th></th><th>数据文件</th><th>索引文件</th></tr>
+<tr><td>一项的大小</td><td>R = 250 bytes</td><td>key 9 bytes + 指针 7 bytes = 16 bytes</td></tr>
+<tr><td>Blocking factor（每块放几项）</td><td>⌊512 ÷ 250⌋ = 2</td><td>⌊512 ÷ 16⌋ = 32</td></tr>
+<tr><td>一共多少块</td><td>10,000 ÷ 2 = 5,000</td><td>⌈10,000 ÷ 32⌉ = 313</td></tr>
+</table></div>
+<ul>
+<li>在数据文件上 linear search：平均 b/2 = 2,500 次块访问。</li>
+<li>在有序数据文件上 binary search：log<sub>2</sub> 5,000 ≈ 13 次。</li>
+<li>在索引文件上 binary search：log<sub>2</sub> 313 ≈ 9 次，再加 1 次读数据块，共 <b>10 次</b>。</li>
+</ul>
+<p>索引更快的原因很朴素：索引项比记录小得多，一个块能放的项更多，所以索引文件的块数少得多。</p>
+<div class="slides"><a href="#" data-sl="w06-9"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 9 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-10"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 10 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-11"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 11 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-12"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 12 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week06-Indexing.pdf 第 9–12 页。点图片看大图。</p>
+</div>
+
+<h2 id="types" data-short="索引类型">2　单层索引的三种类型</h2>
+<p>先分清两个词。<b>Sparse（稀疏）index</b>：只给一部分值建索引项，索引项比记录少。<b>Dense（稠密）index</b>：每条记录都有一个索引项。</p>
+<p>用哪种，取决于数据文件本身有没有排序：</p>
+<div class="scroll"><table>
+<tr><th></th><th>数据文件</th><th>建在什么字段上</th><th>索引项有多少</th><th>Sparse / Dense</th></tr>
+<tr><td><b>Primary index</b></td><td>有序（sequential file）</td><td>排序字段，而且是 key（值不重复）</td><td>每个<b>数据块</b>一项，记这个块第一条记录的 key（叫 block anchor）</td><td>Sparse</td></tr>
+<tr><td><b>Clustering index</b></td><td>有序</td><td>排序字段，但不是 key（值会重复）</td><td>每个<b>不同的值</b>一项，指向第一个含这个值的数据块</td><td>Sparse</td></tr>
+<tr><td><b>Secondary index</b></td><td>无序（heap file）</td><td>key 或非 key 都可以</td><td>每条<b>记录</b>一项</td><td>Dense</td></tr>
+</table></div>
+<p>有序文件可以用稀疏索引，是因为数据本身排好了：找到所在的块以后，顺着往下读就行。无序文件做不到，所以每条记录都得有一项。</p>
+<div class="slides"><a href="#" data-sl="w06-13"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 13 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-14"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 14 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-15"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 15 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-16"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 16 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-17"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 17 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-18"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 18 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-20"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 20 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-21"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 21 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-22"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 22 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week06-Indexing.pdf 第 13–18、20–22 页。点图片看大图。</p>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>一个例子把三种分清</h3>
+<p>假设学生文件每个块放 3 条记录。</p>
+<ul>
+<li>文件按<b>学号</b>（不重复）排序 → 给学号建的是 primary index：每个块记一项“这个块的第一个学号 → 块地址”。</li>
+<li>文件按<b>专业</b>（会重复）排序 → 给专业建的是 clustering index：每个专业记一项“IT → 第一个出现 IT 的块”。</li>
+<li>文件没按<b>邮箱</b>排序，却想按邮箱查 → 只能建 secondary index：每条记录一项“邮箱 → 这条记录的位置”。</li>
+</ul>
+<h3>Clustering index 的问题（课件第 19 页）</h3>
+<p>数据是物理有序的，所以插入和删除记录很麻烦（primary index 也有同样的问题）。缓解办法：给每个不同的值预留一整个块（或一组相邻的块），把值相同的记录都放在一起。</p>
+<h3>文件类型和索引类型的对应（课件第 14 页）</h3>
+<ul>
+<li>Sequential file（有序）→ sparse index：primary、clustering。</li>
+<li>Unordered file（heap）→ dense index：secondary、树索引、bitmap。</li>
+<li>Hash file → hash index。</li>
+</ul>
+<div class="slides one"><a href="#" data-sl="w06-19"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 19 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week06-Indexing.pdf 第 19 页。点图片看大图。</p>
+</div>
+
+<h3>真题：2025 Q4（4 分）</h3>
+<figure class="shot"><img loading="lazy" width="749" height="719" src="../assets/img/exam-2025-q4.webp" alt="2025 年试卷 Question 4：clustering index 画箭头，以及 secondary index 为什么是 dense index"><figcaption>出处：EXAM/2025.pdf 第 3 页</figcaption></figure>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2025 Q4 两问</summary><div class="body">
+<p><b>4-1</b>　Clustering index 里每个不同的值画<b>一根</b>箭头，指向数据文件里<b>第一次出现这个值的那个块</b>。不要给每条记录都画箭头，那是 dense index 的画法。依据是课件第 17–18 页。</p>
+<p><b>4-2</b>　可以这样写：</p>
+<p class="ans-en">A secondary index is defined on an unordered data file (heap file); it can be defined on a key or a non-key field. Because the records are not physically ordered by the indexed field, the index must include one entry for every record in the data file. Therefore it is a dense index.</p>
+</div></details>
+
+<h2 id="hash-bitmap" data-short="Hash 与 Bitmap 索引">3　Hash 索引和 Bitmap 索引</h2>
+<p><b>Hash index：</b>用 hash function 把 key 值算成 bucket 编号，记录就放在那个 bucket 里。等值查询（point query）极快，但不保持顺序，所以<b>不适合范围查询</b>。</p>
+<p><b>Bitmap index：</b>给一列的<b>每个不同的值</b>建一条位图（bit vector）。位图的长度等于表的行数，第 i 位是 1 表示第 i 行是这个值，否则是 0。多个条件的 AND、OR 直接变成位运算。</p>
+<p>Bitmap 适合三种情况：表很大而这一列的不同值很少（low cardinality）；查询经常把多个条件用 AND、OR 组合；这一列很少更新。</p>
+<div class="slides"><a href="#" data-sl="w06-23"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 23 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-24"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 24 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-25"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 25 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-26"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 26 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week06-Indexing.pdf 第 23–26 页。点图片看大图。</p>
+
+<h3>真题：2023 Q5（7 分）</h3>
+<figure class="shot"><img loading="lazy" width="746" height="553" src="../assets/img/exam-2023-q5.webp" alt="2023 年试卷 Question 5：给 EMP 表建 bitmap 索引并计算一个查询"><figcaption>出处：EXAM/2023.pdf 第 7 页</figcaption></figure>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2023 Q5 两问</summary><div class="body">
+<p><b>5-1　哪些列适合建 bitmap。</b>只挑不同值很少的列：DEGREE（PhD、BSC、BCOM）、DEPARTMENT（ITEE、MATH、SCIENCE）、CONT（Y、N）。ID 和姓名每行都不同，不适合。每个值一条位图：</p>
+<div class="scroll"><table>
+<tr><th>DEGREE</th><th>位图</th><th>DEPARTMENT</th><th>位图</th><th>CONT</th><th>位图</th></tr>
+<tr><td>PhD</td><td class="seq">1 0 1 0 0 1</td><td>ITEE</td><td class="seq">1 0 0 1 0 1</td><td>Y</td><td class="seq">1 0 1 1 1 0</td></tr>
+<tr><td>BSC</td><td class="seq">0 1 0 0 1 0</td><td>MATH</td><td class="seq">0 1 1 0 0 0</td><td>N</td><td class="seq">0 1 0 0 0 1</td></tr>
+<tr><td>BCOM</td><td class="seq">0 0 0 1 0 0</td><td>SCIENCE</td><td class="seq">0 0 0 0 1 0</td><td></td><td></td></tr>
+</table></div>
+<p>检查方法：同一列的几条位图竖着看，每一行应该恰好有一个 1。</p>
+<p><b>5-2　计算查询。</b>条件是 degree = 'PhD' AND (department = 'MATH' OR cont = 'N')。先算括号里的 OR，再和 PhD 做 AND。下面的组件默认就是这道题，可以改条件再试：</p>
+</div></details>
+<div class="bitmap-tool" data-cols="FNAME,LNAME,ID,DEGREE,DEPARTMENT,CONT" data-index="[3,4,5]" data-default="DEGREE = PhD|AND|DEPARTMENT = MATH|OR|CONT = N"
+ data-rows='[["David","Smith",10,"PhD","ITEE","Y"],["Lydia","Anderson",20,"BSC","MATH","N"],["Peter","Neuman",30,"PhD","MATH","Y"],["Michael","Ducunal",40,"BCOM","ITEE","Y"],["Kim","Lucida",50,"BSC","SCIENCE","Y"],["Jenny","Eastwood",60,"PhD","ITEE","N"]]'></div>
+<p>默认条件的结果是 0 0 1 0 0 1，也就是第 3 行 (30, Peter, Neuman) 和第 6 行 (60, Jenny, Eastwood)。答题时要写出位运算的过程，并指出是哪几条记录。</p>
+
+<h2 id="multilevel" data-short="多层索引">4　多层索引和搜索树</h2>
+<p>单层索引本身也是一个有序文件，所以可以<b>给索引再建一层索引</b>，一层层往上，直到最顶层能放进一个块。这就是 multi-level index，形状是一棵树。</p>
+<p>课件的数字（第 29 页）：1,000,000 条记录，每个数据块放 10 条，每个索引块放 100 项。</p>
+<div class="scroll"><table>
+<tr><th>方法</th><th>读多少块</th><th>怎么算</th></tr>
+<tr><td>从头扫到尾</td><td>100,000</td><td>1,000,000 ÷ 10</td></tr>
+<tr><td>在有序数据文件上二分</td><td>17</td><td>log<sub>2</sub> 100,000</td></tr>
+<tr><td>在单层索引上二分</td><td>10</td><td>log<sub>2</sub> (100,000 ÷ 100)</td></tr>
+<tr><td>多层索引（树）</td><td>3</td><td>log<sub>100</sub> 100,000，就是树的高度</td></tr>
+</table></div>
+<p>通过索引树访问一条数据，总共是树高 + 1 次 I/O（最后 1 次读数据块），这里是 3 + 1 = 4。<b>树的每一层就是一次 I/O</b>，所以树越矮越好。</p>
+<div class="slides"><a href="#" data-sl="w06-27"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 27 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-28"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 28 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-29"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 29 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-30"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 30 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week06-Indexing.pdf 第 27–30 页。点图片看大图。</p>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>搜索树的词汇（课件第 30 页）</h3>
+<ul>
+<li><b>Node</b>：一个索引块。<b>Root</b>：最先读的那个块。<b>Leaf</b>：最底层的节点。</li>
+<li><b>Order</b>：一个节点最多有几棵子树。</li>
+<li><b>Height</b>：从根到叶的层数，等于一次查找的 I/O 次数。</li>
+<li><b>Balanced tree</b>：所有叶子在同一层，所以每条查找路径一样长。</li>
+</ul>
+<p>插入和删除后树需要维护，保持子树之间有序。</p>
+<p><b>范围查询的问题</b>（第 31 页）：“找出所有 gpa &gt; 3.0 的学生”。如果数据有序，可以先二分找到第一个，再顺着往后扫；但二分查找本身代价不低。解决的思路还是建索引，这引出了 B-tree 和 B+-tree。</p>
+<div class="slides one"><a href="#" data-sl="w06-31"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 31 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week06-Indexing.pdf 第 31 页。点图片看大图。</p>
+</div>
+
+<h2 id="btree" data-short="B-tree 与 B+-tree">5　B-tree 和 B+-tree</h2>
+<p><b>B-tree of order p：</b>每个节点最多 p 个子树指针，至少 ⌈p/2⌉ 个；节点里的 key 从小到大排列；左子树放小于等于的值，右子树放大于的值；所有叶子在同一层。B-tree 的每个节点里，key 旁边都带着数据指针。</p>
+<p><b>B+-tree</b> 改了一点：<b>数据指针只放在叶子里</b>，内部节点只放用来指路的 key；所有叶子横向连成一条链。它是关系数据库的默认索引。</p>
+<div class="scroll"><table>
+<tr><th></th><th>B-tree</th><th>B+-tree</th></tr>
+<tr><td>数据指针（图里的 *）</td><td>每个节点都有</td><td>只有叶子有</td></tr>
+<tr><td>一个 key 出现几次</td><td>整棵树里只出现一次</td><td>叶子里一定有；上层可能再出现一次当路标</td></tr>
+<tr><td>叶子之间</td><td>不相连</td><td>横向连成链，适合范围查询</td></tr>
+<tr><td>一次查找的 I/O</td><td>可能在中途就找到</td><td>永远走到叶子，都等于树高</td></tr>
+<tr><td>相同点</td><td colspan="2">都是平衡树，所有分支一样高</td></tr>
+</table></div>
+<div class="slides"><a href="#" data-sl="w06-32"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 32 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-33"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 33 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-34"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 34 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-35"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 35 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-36"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 36 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week06-Indexing.pdf 第 32–36 页。点图片看大图。</p>
+
+<h3>本课程 B+ 树的约定</h3>
+<p>B+ 树在不同教材里细节不一样，考试按课件的画法给分。下面每一条都来自课件的文字和图。</p>
+<div class="scroll"><table>
+<tr><th>项目</th><th>本课程的约定</th><th>出处</th></tr>
+<tr><td>阶 order \(p\)</td><td>一个节点<b>最多 \(p\) 个指针</b>，所以最多 \(p-1\) 个 key。课件的图里叶子也是最多 \(p-1\) 个 key。</td><td>第 32、39 页</td></tr>
+<tr><td>下限</td><td>非根节点至少 \(\lceil p/2 \rceil\) 个指针。\(p=3\) 时叶子至少 1 个 key。</td><td>第 32 页</td></tr>
+<tr><td>怎么走</td><td>要找的值 <b>≤ 路标往左，&gt; 路标往右</b>。路标等于左边子树里最大的 key。</td><td>第 32 页文字，第 39–45 页的图</td></tr>
+<tr><td>叶子分裂</td><td>\(p=3\) 时左 2 右 1；把<b>左叶最大的 key 复制</b>到父节点。</td><td>第 39–40 页</td></tr>
+<tr><td>内部节点分裂</td><td>中间的 key <b>上移</b>到上一层，不留在本层。</td><td>第 38、40、42 页</td></tr>
+<tr><td>删除后下溢</td><td>先向<b>左兄弟借</b>；借不到就合并，合并可以一路传到根，树变矮。</td><td>第 38、44–45 页</td></tr>
+</table></div>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>课件没有写明、由我补充的地方</h3>
+<p>课件只给了 \(p=3\) 的例子。为了让模拟器和变式题能处理更大的 \(p\)，下面三条是我按课件例子推广的，<b>不是课件原文</b>：</p>
+<ul>
+<li><b>一般的 \(p\) 怎么切。</b>叶子溢出时左边留 \(\lceil p/2 \rceil\) 个；内部节点溢出时左边留 \(\lceil (p-1)/2 \rceil\) 个，下一个上移。\(p=3\)、\(p=5\) 时和课件、2022 年卷的图一致；\(p=4\) 时课件没有例子可对照。</li>
+<li><b>左边借不到时向右兄弟借。</b>课件只演示了向左借。</li>
+<li><b>内部节点下溢。</b>课件第 45 页删除 12 的结果，树直接从 3 层变成 2 层，并给了两种都算对的画法，模拟器复现的是第一种。标准教材在这里通常是向兄弟内部节点借一个孩子，树仍是 3 层。两种都是合法的 B+ 树；考试遇到这种情况，照课件把树压矮更稳。</li>
+</ul>
+</div>
+
+<h2 id="search" data-short="B+ 树查找">6　B+ 树查找</h2>
+<p>从根出发，每到一个节点就拿要找的值和路标比：<b>小于等于往左，大于往右</b>，一直走到叶子。插入和删除的第一步都是这样先找到该去的叶子。递归的次数最多就是树的高度。</p>
+<div data-bp-static='{"c":[{"c":[[6,18],[20]]},{"c":[[21,22],[23]]},{"c":[[24,25],[27]]}]}' data-p="3" class="bp" style="padding:18px 14px;overflow-x:auto"></div>
+<p>在上面这棵树里找 22：根是 [20, 23]，22 比 20 大、不超过 23，走中间；到 [22]，22 ≤ 22，走左边；到叶子 [21*, 22*]，找到。走了 3 层，就是 3 次 I/O。</p>
+<div class="slides one"><a href="#" data-sl="w06-37"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 37 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week06-Indexing.pdf 第 37 页。点图片看大图。</p>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<p><b>范围查询</b>（Tutorial 6 Exercise 4）：先按上面的办法找到范围起点所在的叶子，然后顺着叶子之间的箭头一直往右读，不用回到上层。</p>
+</div>
+
+<h2 id="insert" data-short="B+ 树插入">7　B+ 树插入</h2>
+<p>插入只有三种情况：</p>
+<ol>
+<li><b>叶子有空位：</b>按顺序放进去，结束。</li>
+<li><b>叶子满了（overflow）：</b>先想象把 key 硬塞进去，然后从中间切成两个叶子，把左叶最大的 key 复制一份给父节点当路标。</li>
+<li><b>父节点也满了：</b>父节点也切开，中间的 key 上移到更上一层。如果切的是根，就新建一个根，树长高一层。</li>
+</ol>
+<div class="note key"><b>最容易混的一点：</b>叶子分裂是<b>复制</b>（copy up），那个 key 在叶子里还在；内部节点分裂是<b>上移</b>（move up），那个 key 离开原来那一层。原因是叶子必须保存每一个 key，内部节点只是路标。</div>
+<div class="slides one"><a href="#" data-sl="w06-38"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 38 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week06-Indexing.pdf 第 38 页。点图片看大图。</p>
+<h3>课件例题：依次插入 23, 20, 6, 22, 18, 27, 24, 21, 25（\(p=3\)）</h3>
+<div class="slides"><a href="#" data-sl="w06-39"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 39 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-40"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 40 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-41"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 41 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-42"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 42 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week06-Indexing.pdf 第 39–42 页。点图片看大图。</p>
+<p>上面四页是课件的<span class="label acc">官方答案</span>。下面用模拟器把同一个序列一步步重放，每一步高亮发生变化的节点。勾上“显示中间过程”可以看到硬塞、切开这些中间状态。</p>
+<div class="bp-walk" data-p="3" data-ops="i23 i20 i6 i22 i18 i27 i24 i21 i25" data-detail></div>
+<p>重点看两步。<b>插入 27</b>：叶子 [22, 23, 27] 分裂后把 23 复制上去，根变成 [18, 20, 23] 也溢出，于是 20 上移成为新根，树从 2 层变成 3 层。<b>插入 25</b>：叶子分裂把 25 复制上去，父节点 [22, 23, 25] 溢出，23 上移进根，根变成 [20, 23]，树高不变。</p>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>为什么取“左叶最大值”当路标</h3>
+<p>路标要满足“≤ 它的都在左边，&gt; 它的都在右边”。分裂后左叶是 [6, 20]、右叶是 [23]，能把它们分开的数就是左叶的最大值 20。所以课件所有图里，每个路标都等于它左边子树的最大 key。可以用这条规律检查自己画的树。</p>
+<h3>什么时候树会长高</h3>
+<p>只有<b>根分裂</b>时树才长高。Tutorial 6 Exercise 5(C) 问的就是这个：要让一次插入使树高增加，必须是目标叶子满、它的所有祖先（包括根）也都满，分裂才会一路传到根。</p>
+</div>
+
+<h2 id="delete" data-short="B+ 树删除">8　B+ 树删除</h2>
+<p>删除时按这个顺序问自己：</p>
+<ol>
+<li>找到叶子，把 key 擦掉。</li>
+<li><b>叶子里的 key 还够下限吗？</b>够 → 结束。如果擦掉的正好是上层的路标，把路标改成左边子树现在的最大值。</li>
+<li><b>不够（underflow）。左兄弟有多余的 key 吗？</b>有 → 借它最大的一个过来，改父节点的路标。结束。</li>
+<li><b>借不到</b> → 和兄弟合并成一个叶子，父节点少一个孩子。父节点如果也下溢，继续向上处理；根只剩一个孩子时根消失，树变矮。</li>
+</ol>
+<h3>课件例题：依次删除 8, 15, 12（\(p=3\)）</h3>
+<div class="slides"><a href="#" data-sl="w06-43"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 43 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-44"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 44 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-45"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 45 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week06-Indexing.pdf 第 43–45 页。点图片看大图。</p>
+<div class="bp-walk" data-p="3" data-ops="d8 d15 d12" data-start='{"c":[{"c":[[4],[8,9],[10]]},{"c":[[11,12],[15]]}]}' data-detail></div>
+<p>三步正好是三种情况：删 8 后叶子还剩 9，没事；删 15 后叶子空了，向左兄弟 [11, 12] 借 12，父节点路标从 12 改成 11；删 12 后借不到，只能合并，结果树矮了一层。</p>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>删除 12 的两种官方结果</h3>
+<p>课件第 45 页在 “or” 两边各画了一棵树：一种是根 [4, 9]，叶子 [4] [9] [10, 11]；另一种是根 [9, 10]，叶子 [4, 9] [10] [11]。模拟器给出的是第一种。两种都满足：每个节点不超过 2 个 key、路标等于左边子树最大值、叶子在同一层。考试只要画出其中一种合法的树即可。</p>
+<h3>被删的 key 正好是路标怎么办</h3>
+<p>例如叶子 [20, 25] 上面的路标是 25，删掉 25 以后叶子变成 [20]。我在这里把路标改成 20，理由是课件所有图里路标都等于左边子树的最大值。课件没有单独演示这种情况。把 25 留着不改，查找照样正确，一般也算对；但后面的插入可能落到不同的叶子，所以选定一种就坚持到底。<span class="label">没把握的地方</span>阅卷时两种是否都给满分，我无法确认。</p>
+</div>
+
+<h2 id="which" data-short="选哪种索引">9　该用哪种索引</h2>
+<div class="scroll"><table>
+<tr><th>索引</th><th>适合</th><th>不适合</th></tr>
+<tr><td>B-tree / B+-tree</td><td>保持数据顺序，范围查询和等值查询都行；适合不同值很多（very selective）的字段</td><td>重复值很多的字段</td></tr>
+<tr><td>Hash index</td><td>等值查询（point query）</td><td>范围查询</td></tr>
+<tr><td>Primary index</td><td>按主键排序存放的记录</td><td></td></tr>
+<tr><td>Clustering index 或 B+-tree</td><td>外键：连接最贵，可以把要连接的记录预先放在一起</td><td></td></tr>
+<tr><td>Bitmap index</td><td>不同值很少（low cardinality）的字段，读多写少</td><td>经常更新的字段</td></tr>
+</table></div>
+<div class="scroll"><table>
+<tr><th>B+-Tree</th><th>Bitmap</th></tr>
+<tr><td>适合 high-selectivity 列</td><td>适合 low-selectivity 列</td></tr>
+<tr><td>更新 key 相对便宜</td><td>更新 key 很贵</td></tr>
+<tr><td>用 OR 的查询效率低</td><td>用 OR 的查询效率高</td></tr>
+<tr><td>适合 OLTP</td><td>适合 DSS（决策分析）</td></tr>
+</table></div>
+<div class="slides"><a href="#" data-sl="w06-46"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 46 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-47"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 47 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-48"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 48 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w06-49"><img width="1067" height="600" alt="Week06-Indexing.pdf 第 49 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week06-Indexing.pdf 第 46–49 页。点图片看大图。</p>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>什么时候建、什么时候删（课件第 48 页）</h3>
+<p><b>建索引或启用索引：</b>字段是 key（主键或候选键）；查询经常在选择条件（等值或范围）或连接里用到这个字段；同一张表的多个字段在不同查询里一起出现。</p>
+<p><b>删索引或停用索引：</b>字段的数据改动很频繁；用这个索引的应用不再运行；批量导入数据时（导完再重建）；索引损坏；索引只是偶尔才用。</p>
+</div>
+
+<h2 id="example-tut" data-short="例题 A：Tutorial 6 Ex 3">10　核心例题 A：Tutorial 6 Exercise 3</h2>
+<figure class="shot"><img loading="lazy" width="805" height="99" src="../assets/img/tut06-ex3-q.webp" alt="Tutorial 6 Exercise 3 题目：p=3，依次插入 20, 17, 3, 19, 15, 24, 21, 18"><figcaption>出处：Tut06-Index-2026.pdf 第 2 页</figcaption></figure>
+<p>先拿纸自己画 7 棵树（20 和 17 算一步），再打开答案对照。</p>
+<details class="answer"><summary><span class="label acc">官方答案</span>Tutorial 6 Exercise 3 Solution</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="866" height="635" src="../assets/img/tut06-ex3-sol.webp" alt="Tutorial 6 Exercise 3 官方答案的 7 棵树"><figcaption>出处：Tut06-Index-2026.pdf 第 5 页。第 (4) 步图里最右叶写的 “19* 10*” 是原文的笔误，应为 19* 20*。</figcaption></figure>
+</div></details>
+<details class="answer"><summary><span class="label">解题思路</span>逐步重放（模拟器输出，已和官方答案逐棵核对）</summary><div class="body">
+<div class="bp-walk" data-p="3" data-ops="i20 i17 i3 i19 i15 i24 i21 i18"></div>
+<p>三个关键步：插入 3 时第一次叶子分裂，17 复制上去成为根；插入 24 时叶子分裂把 20 复制上去，根 [15, 17, 20] 溢出，17 上移，树长到 3 层；插入 18 时叶子 [18, 19, 20] 分裂，19 复制上去，右边的内部节点变成 [19, 20]。</p>
+</div></details>
+
+<h2 id="example-exam" data-short="例题 B：2023 Q10">11　核心例题 B：2023 Q10（10 分）</h2>
+<figure class="shot"><img loading="lazy" width="780" height="259" src="../assets/img/exam-2023-q10.webp" alt="2023 年试卷 Question 10：p=3 的插入删除序列"><figcaption>出处：EXAM/2023.pdf 第 12 页</figcaption></figure>
+<p>这是考试的标准题型：插入和删除混在一起，一共 11 步，每步画一棵树。</p>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>11 步的树和每一步的理由</summary><div class="body">
+<p>往年试卷没有官方答案。下面的树由模拟器按第 5 节的约定生成。</p>
+<div class="bp-walk" data-p="3" data-ops="i25 i30 i20 i33 i29 d33 d25 i17 i32 i24 d17" data-grid></div>
+<ul>
+<li><b>第 3 步 Insert 20：</b>[20, 25, 30] 溢出，切成 [20, 25] 和 [30]，复制 25 成为根。</li>
+<li><b>第 5 步 Insert 29：</b>右叶 [29, 30, 33] 分裂，复制 30，根变成 [25, 30]。</li>
+<li><b>第 6 步 Delete 33：</b>叶子空了，向左兄弟 [29, 30] 借 30，路标从 30 改成 29。</li>
+<li><b>第 7 步 Delete 25：</b>叶子还剩 [20]。被删的 25 是路标，改成 20。这一步的处理见第 8 节细化讲解里的说明。</li>
+<li><b>最终：</b>根 [20, 29]；叶子 [20] → [24, 29] → [30, 32]。</li>
+</ul>
+</div></details>
+<div class="note"><b>规律：</b>2024 Q8 的序列是把上面每个数加 27，2025 Q9 是每个数加 44，操作的顺序完全一样，所以树的形状也一样。这是往年的规律，不保证今年还这样出。</div>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<div class="shots">
+<figure class="shot"><img loading="lazy" width="780" height="253" src="../assets/img/exam-2024-q8.webp" alt="2024 年试卷 Question 8"><figcaption>出处：EXAM/2024.pdf 第 8 页</figcaption></figure>
+<figure class="shot"><img loading="lazy" width="779" height="192" src="../assets/img/exam-2025-q9.webp" alt="2025 年试卷 Question 9"><figcaption>出处：EXAM/2025.pdf 第 7 页</figcaption></figure>
+</div>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2024 Q8 的 11 步</summary><div class="body"><div class="bp-walk" data-p="3" data-ops="i52 i57 i47 i60 i56 d60 d52 i44 i59 i51 d44" data-grid></div><p>最终：根 [47, 56]；叶子 [47] → [51, 56] → [57, 59]。</p></div></details>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2025 Q9 的 11 步</summary><div class="body"><div class="bp-walk" data-p="3" data-ops="i69 i74 i64 i77 i73 d77 d69 i61 i76 i68 d61" data-grid></div><p>最终：根 [64, 73]；叶子 [64] → [68, 73] → [74, 76]。</p></div></details>
+<h3>2022 Q1：题目自带约定的情况</h3>
+<figure class="shot"><img loading="lazy" width="780" height="340" src="../assets/img/exam-2022-q1.webp" alt="2022 年试卷 Question 1：给定一棵树，插入 7"><figcaption>出处：EXAM/2022.pdf 第 2 页。1.2 问是在 1.1 的结果上再插入 36。</figcaption></figure>
+<p>这道题的树和今年课件的画法不同：每个节点最多 4 个 key；等于路标的值在<b>右边</b>（路标 10 的右边叶子以 10 开头）；题目规定叶子分裂后旧节点留 3 个 key。<b>题目给了图和规则，就按题目的来。</b>模拟器用的是今年课件的约定，所以这道题不用模拟器，下面是手工推导。</p>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2022 Q1 的两问</summary><div class="body">
+<p><b>1.1 插入 7：</b>7 &lt; 10，进 N2。N2 变成 [1, 2, 4, 7, 8]，5 个 key 溢出。旧节点留 [1, 2, 4]，新节点是 [7, 8]。按原图的画法，路标取新节点的第一个 key 7，复制到根。根变成 [7, 10, 20, 30]，正好放满。</p>
+<p><b>1.2 再插入 36：</b>36 ≥ 30，进 N5。N5 变成 [31, 36, 39, 41, 46]，溢出。旧节点留 [31, 36, 39]，新节点是 [41, 46]，复制 41 到根。根变成 [7, 10, 20, 30, 41]，5 个 key 溢出。中间的 20 上移成为新根，左边内部节点 [7, 10]，右边内部节点 [30, 41]，树长高一层。</p>
+<p><span class="label">没把握的地方</span>这道题没有官方答案。路标取“新节点第一个 key”是我从原图里路标 10 对应叶子 [10, 16] 推断出来的。</p>
+</div></details>
+</div>
+
+<h2 id="variants" data-short="进阶变式题">12　进阶变式题</h2>
+<p>三道题难度逐级上升。答案全部由模拟器生成。模拟器先用课件的插入例题、删除例题和 Tutorial 6 Exercise 3 的官方答案逐棵核对过，再用来算这些题。</p>
+<div class="problem"><p class="title">变式 1　\(p=3\)，会触发根分裂和树变矮</p>
+<p class="seq">Insert 30, 25, 20, 35, 40, 15, Delete 25, Insert 45, Delete 40, Delete 35, Delete 20, Delete 15</p>
+<p>要点：这道题比真题多了内部节点分裂、合并和树高变化。</p></div>
+<details class="answer"><summary><span class="label">程序生成的答案</span>变式 1 的 12 步</summary><div class="body"><div class="bp-walk" data-p="3" data-ops="i30 i25 i20 i35 i40 i15 d25 i45 d40 d35 d20 d15" data-grid></div>
+<p>最终：根 [30]；叶子 [30] → [45]。点“回到单步”并勾上中间过程，可以看每一步的理由。</p></div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<div class="problem"><p class="title">变式 2　\(p=4\)：每个节点最多 3 个 key，叶子至少 2 个</p>
+<p class="seq">Insert 3, 29, 26, 7, 11, 45, 22, 33, 18, 37, Delete 22, Delete 7, Delete 45</p>
+<p>要点：叶子溢出时有 4 个 key，切成左 2 右 2；会出现向右兄弟借和合并。</p></div>
+<details class="answer"><summary><span class="label">程序生成的答案</span>变式 2 的 13 步</summary><div class="body"><div class="bp-walk" data-p="4" data-ops="i3 i29 i26 i7 i11 i45 i22 i33 i18 i37 d22 d7 d45" data-grid></div>
+<p>最终：根 [11, 26]；叶子 [3, 11] → [18, 26] → [29, 33, 37]。\(p\) 为偶数时内部节点的切法是我补充的约定，见第 5 节。</p></div></details>
+<div class="problem"><p class="title">变式 3　\(p=5\)，从一棵已经放满的树开始</p>
+<p>初始：根 [8, 16, 26, 36]；叶子 [2, 4, 6, 8] → [10, 12, 14, 16] → [20, 22, 24, 26] → [30, 32, 34, 36] → [40, 42, 44, 46]。</p>
+<p class="seq">Insert 15, Delete 16, Delete 14, Delete 36, Delete 24, Delete 12, Delete 10</p>
+<p>要点：第一步就让根分裂、树长高；随后的删除会借位、合并，并让树变回 2 层。</p></div>
+<details class="answer"><summary><span class="label">程序生成的答案</span>变式 3 的 7 步</summary><div class="body"><div class="bp-walk" data-p="5" data-ops="i15 d16 d14 d36 d24 d12 d10" data-start='{"c":[[2,4,6,8],[10,12,14,16],[20,22,24,26],[30,32,34,36],[40,42,44,46]]}' data-grid></div>
+<p>最终：根 [6, 15, 26, 34]；叶子 [2, 4, 6] → [8, 15] → [20, 22, 26] → [30, 32, 34] → [40, 42, 44, 46]。</p></div></details>
+</div>
+<p class="only-detail-hint">切换到“细化讲解”可以看到 \(p=4\) 和 \(p=5\) 的两道变式题。</p>
+
+<h2 id="simulator" data-short="B+ 树模拟器">13　自己动手：B+ 树模拟器</h2>
+<p>选一个 \(p\)，输入 key，点插入或删除。每个操作会拆成几个小步，用“上一步”“下一步”前后翻，高亮的是这一步发生变化的节点，下面的文字说明发生了什么。要删除树里已有的 key，也可以直接点树上的那个数字。</p>
+<div class="bp-sandbox"></div>
+<p class="kbd-hint">焦点在模拟器里时，<kbd>←</kbd> <kbd>→</kbd> 是上一步和下一步；在 key 输入框里按 <kbd>Enter</kbd> 是插入。</p>
+
+<h2 id="quiz" data-short="小测">14　小测</h2>
+<p>8 道题，点选项立刻看到对错和解释。答错的题会进首页的错题本。</p>
+<div class="quiz" data-quiz="quiz-data"></div>
+<script type="application/json" id="quiz-data">[
+{"id":"q1","q":"题目写 order p = 3。按本课程的约定，一个节点最多能放几个 key？","options":["1 个","2 个","3 个","4 个"],"answer":1,"why":"p 是每个节点最多的指针数。3 个指针之间夹 2 个 key，所以最多 p − 1 = 2 个。"},
+{"id":"q2","q":"p = 3，叶子里已有 [20, 23]，现在插入 6。分裂后送到父节点的路标是哪个？","options":["6","20","23","6 和 20"],"answer":1,"why":"硬塞后是 [6, 20, 23]，切成左 [6, 20]、右 [23]。复制左叶最大的 key，也就是 20。20 在叶子里仍然保留。"},
+{"id":"q3","q":"p = 3，内部节点变成了 [18, 20, 23]。分裂后的结果是？","options":["左 [18, 20]，右 [23]，20 复制上去","左 [18]，右 [23]，20 上移，不留在这一层","左 [18]，右 [20, 23]，18 上移","左 [18]，右 [20, 23]，20 复制上去"],"answer":1,"why":"内部节点分裂时中间的 key 是上移（move up），不是复制。它只是路标，不需要在本层再保留一份。"},
+{"id":"q4","q":"p = 3，根是 [25, 30]，叶子是 [20, 25] → [29, 30] → [33]。Delete 33 之后，根变成什么？","options":["[25, 30]","[25]","[25, 29]","[29, 30]"],"answer":2,"why":"叶子 [33] 删空后下溢，向左兄弟 [29, 30] 借 30，两个叶子变成 [29] 和 [30]。路标改成左叶现在的最大值 29，所以根是 [25, 29]。"},
+{"id":"q5","q":"哪种情况会让 B+ 树的高度增加？","options":["任何一次叶子分裂","内部节点分裂","根节点分裂","叶子之间借 key"],"answer":2,"why":"只有根分裂时才会新建一个根，树长高一层。"},
+{"id":"q6","q":"数据文件按 Department 排序，Department 的值有重复。给 Department 建的索引是哪一种？","options":["Primary index","Clustering index","Secondary index","Hash index"],"answer":1,"why":"有序文件、排序字段不是 key（值有重复），就是 clustering index。每个不同的值一项，指向第一个含该值的块，是 sparse index。"},
+{"id":"q7","q":"为什么 secondary index 一定是 dense index？","options":["因为它建在主键上","因为数据文件没有按这个字段排序，每条记录都要有一个索引项","因为它用 hash function","因为它只能建在非 key 字段上"],"answer":1,"why":"数据无序时，没法靠“找到块以后顺着读”，所以每条记录都必须有自己的索引项。"},
+{"id":"q8","q":"下面哪一列最适合建 bitmap index？","options":["学号（每个学生都不同）","性别（只有两三个值），而且很少更新","经常被更新的账户余额","邮箱地址"],"answer":1,"why":"Bitmap 适合不同值很少（low cardinality）而且读多写少的列。不同值很多时位图条数太多，更新频繁时维护很贵。"}
+]</script>
+
+<nav class="pager" aria-label="翻页"><a rel="prev" href="../index.html">← 首页</a><a rel="next" href="tx.html">第 2 章 事务与调度 →</a></nav>
+<p class="kbd-hint">键盘：<kbd>←</kbd> <kbd>→</kbd> 在小节之间翻页。</p>
+</div></main>
+</div>
+<script src="../assets/js/bplus-core.js"></script>
+<script src="../assets/js/bplus-ui.js"></script>
+<script src="../assets/js/tools-core.js"></script>
+<script src="../assets/js/tools-ui.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

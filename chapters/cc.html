@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="quick">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 3 章 并发控制：2PL、TO、死锁 · INFS7903 期末复习</title>
+<link rel="stylesheet" href="../assets/css/site.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
+</head>
+<body data-chapter="cc" data-base="../">
+<header class="top">
+  <button type="button" class="icon-btn menu-btn" aria-label="打开目录">目录</button>
+  <a class="brand" href="../index.html">INFS7903 <small>期末复习</small></a>
+  <span class="grow"></span>
+  <span class="top-progress"></span>
+  <div class="seg" role="group" aria-label="阅读模式">
+    <button type="button" data-mode-btn="quick" aria-pressed="true">一天速通</button>
+    <button type="button" data-mode-btn="detail" aria-pressed="false">细化讲解</button>
+  </div>
+  <button type="button" class="icon-btn" data-theme-btn>深色</button>
+</header>
+<div class="shell">
+<nav class="side" aria-label="目录"></nav>
+<main><div class="doc">
+<p class="kicker">第 3 章 · WEEK 11 · CONCURRENCY CONTROL</p>
+<h1>并发控制：2PL、Timestamp Ordering、死锁</h1>
+<p class="lede">Week 11 整节课：用锁和时间戳让并发事务不出错。Timestamp Ordering 的 13 步填表三年原样出现。</p>
+<div class="meta"><span>速通约 80 分钟</span><span>2022 12 分，2023 22 分，2024 5/50，2025 5/50</span></div>
+<h2 id="overview" data-short="这一章在做什么">1　这一章在做什么</h2>
+<p>上一章学会了<b>检查</b>一个 schedule 对不对。但 DBMS 不会事后检查，它需要一套<b>规则</b>，让事务照着做，做出来的 schedule 自然是 conflict serializable 的。规则有两大类：</p>
+<ul>
+<li><b>Locking（加锁）</b>：用数据之前先上锁，别人要用就得等。代表是 <b>2PL</b>（Two-Phase Locking）。副作用是可能 deadlock。</li>
+<li><b>Timestamping（时间戳）</b>：不上锁、不等待。给每个事务一个时间戳，发现顺序不对就直接回滚。代表是 <b>TO</b>（Timestamp Ordering）。</li>
+</ul>
+<div class="note key"><b>考试重点：</b>TO 的 13 步填表（2023 年 10 分，2024、2025 年各 5 分，三年同一个 schedule）；deadlock、starvation、wait-for graph 的简答（2023 Q7，10 分）；写一个满足 2PL 却 deadlock 的例子（2023 Q4-4，2024 Q4-3）。赶时间可以直接跳到第 8 节 TO。</div>
+<div class="slides"><a href="#" data-sl="w11-3"><img width="1067" height="600" alt="Week11-CC.pdf 第 3 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-4"><img width="1067" height="600" alt="Week11-CC.pdf 第 4 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week11-CC.pdf 第 3、4 页。点图片看大图。</p>
+
+<h2 id="locks" data-short="两种锁">2　锁（lock）</h2>
+<p>锁是附在一个 data item 上的变量，记录这个数据现在允许别人做什么。</p>
+<h3>Binary lock</h3>
+<p>只有两个状态：locked（1）和 unlocked（0）。锁上以后，别的事务读和写都不行，只能等。简单，但<b>太严格</b>：几个事务只是想同时读同一个数据，本来互不影响，也被挡住了。</p>
+<h3>Read/Write lock（也叫 Shared/Exclusive lock）</h3>
+<p>三个状态：read-locked、write-locked、unlocked。多数 DBMS 用这种。</p>
+<div class="scroll"><table>
+<tr><th>X 现在的状态</th><th>别的事务申请 read-lock(X)</th><th>别的事务申请 write-lock(X)</th></tr>
+<tr><td>unlocked</td><td>给</td><td>给</td></tr>
+<tr><td>read-locked（S 锁，共享）</td><td>给，可以多个事务一起读</td><td>等</td></tr>
+<tr><td>write-locked（X 锁，独占）</td><td>等</td><td>等</td></tr>
+</table></div>
+<p>记法：<b>S</b> = shared = read lock；<b>X</b> = exclusive = write lock。读之前至少要有 read lock，写之前必须有 write lock，用完要 unlock。</p>
+<div class="slides"><a href="#" data-sl="w11-5"><img width="1067" height="600" alt="Week11-CC.pdf 第 5 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-6"><img width="1067" height="600" alt="Week11-CC.pdf 第 6 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-7"><img width="1067" height="600" alt="Week11-CC.pdf 第 7 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-12"><img width="1067" height="600" alt="Week11-CC.pdf 第 12 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-16"><img width="1067" height="600" alt="Week11-CC.pdf 第 16 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week11-CC.pdf 第 5–7、12、16 页。点图片看大图。</p>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>Binary lock 的四条规则（课件第 10 页）</h3>
+<ol>
+<li>读或写 X 之前必须先 lock-item(X)。</li>
+<li>对 X 的读写全部做完后必须 unlock-item(X)。</li>
+<li>已经持有 X 的锁，就不再申请。</li>
+<li>没有持有 X 的锁，就不能 unlock。</li>
+</ol>
+<p>DBMS 里有一个 <b>lock manager</b>，维护一张锁表（item-name, LOCK, locking-transaction）和一个等待队列。</p>
+<h3>Read/Write lock 的六条规则（课件第 16 页）</h3>
+<ol>
+<li>读 X 之前必须有 read-lock(X) 或 write-lock(X)。</li>
+<li>写 X 之前必须有 write-lock(X)。</li>
+<li>读写做完后必须 unlock(X)。</li>
+<li>已经持有 X 的读锁或写锁，不再申请 read-lock(X)。</li>
+<li>已经持有 X 的读锁或写锁，不再申请 write-lock(X)。有的协议放宽这一条，允许把读锁<b>升级（upgrade）</b>成写锁。</li>
+<li>没有持有 X 的锁，就不能 unlock(X)。</li>
+</ol>
+<p>课件第 8–9、13–15 页是加锁和解锁的伪代码：锁被占着就等，直到 lock manager 把你唤醒；读锁用 no-of-reads 计数，减到 0 才真正解锁。</p>
+<div class="slides"><a href="#" data-sl="w11-8"><img width="1067" height="600" alt="Week11-CC.pdf 第 8 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-9"><img width="1067" height="600" alt="Week11-CC.pdf 第 9 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-10"><img width="1067" height="600" alt="Week11-CC.pdf 第 10 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-11"><img width="1067" height="600" alt="Week11-CC.pdf 第 11 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-13"><img width="1067" height="600" alt="Week11-CC.pdf 第 13 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-14"><img width="1067" height="600" alt="Week11-CC.pdf 第 14 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-15"><img width="1067" height="600" alt="Week11-CC.pdf 第 15 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week11-CC.pdf 第 8–11、13–15 页。点图片看大图。</p>
+</div>
+
+<h3>例题：Tutorial 11 Exercise 3（给事务加上锁）</h3>
+<figure class="shot"><img loading="lazy" width="803" height="280" src="../assets/img/tut11-ex3-q.webp" alt="Tutorial 11 Exercise 3：按 read/write locking 给三个事务插入 lock 和 unlock"><figcaption>出处：Tut11-CC-2026.pdf 第 1 页</figcaption></figure>
+<details class="answer"><summary><span class="label acc">官方答案</span>Tutorial 11 Exercise 3 Solution</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="685" height="408" src="../assets/img/tut11-ex3-sol.webp" alt="Tutorial 11 Exercise 3 官方答案"><figcaption>出处：Tut11-CC-2026.pdf 第 3 页</figcaption></figure>
+<p><b>讲解：</b>看每个数据项在这个事务里会不会被写。会被写的（T1 的 X，T2 的 X，T3 的 Z 和 X）直接上 write-lock，因为这门课默认不升级锁；只读的（T2、T3 的 Y）上 read-lock。锁在第一次用这个数据之前加，在最后一次用完之后放。</p>
+</div></details>
+
+<h2 id="twopl" data-short="2PL">3　为什么只加锁不够：Two-Phase Locking</h2>
+<p><b>光加锁不能保证 serializable。</b>课件第 18–20 页的例子：X = 20，Y = 30。T1 读 Y 后算 X = X + Y；T2 读 X 后算 Y = X + Y。T1 先做完再做 T2 得到一组结果，T2 先再 T1 得到另一组。但如果两个事务都是“读完就马上解锁”，就可能两个都读到旧值，各自写回，结果和两种串行都不一样。原因是<b>锁放得太早</b>。</p>
+<p><b>2PL 的规则只有一句：一个事务里，所有加锁操作都必须在第一个解锁操作之前。</b></p>
+<p>于是事务分成两个阶段：</p>
+<ul>
+<li><b>Growing（expanding）phase</b>：只加锁，不解锁。</li>
+<li><b>Shrinking phase</b>：只解锁，不再加锁。</li>
+</ul>
+<p>只要每个事务都遵守 2PL，得到的 schedule 就一定是 conflict serializable 的。</p>
+<p>检查一个事务是否符合 2PL：找到<b>第一个 unlock</b>，看它后面还有没有 lock。有就不符合。</p>
+<div class="slides"><a href="#" data-sl="w11-17"><img width="1067" height="600" alt="Week11-CC.pdf 第 17 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-18"><img width="1067" height="600" alt="Week11-CC.pdf 第 18 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-19"><img width="1067" height="600" alt="Week11-CC.pdf 第 19 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-20"><img width="1067" height="600" alt="Week11-CC.pdf 第 20 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-21"><img width="1067" height="600" alt="Week11-CC.pdf 第 21 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-22"><img width="1067" height="600" alt="Week11-CC.pdf 第 22 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-23"><img width="1067" height="600" alt="Week11-CC.pdf 第 23 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week11-CC.pdf 第 17–23 页。点图片看大图。</p>
+
+<h3>例题：Tutorial 11 Exercise 4</h3>
+<figure class="shot"><img loading="lazy" width="750" height="324" src="../assets/img/tut11-ex4-q.webp" alt="Tutorial 11 Exercise 4：三个事务是否遵守 2PL，不遵守的改成遵守"><figcaption>出处：Tut11-CC-2026.pdf 第 2 页</figcaption></figure>
+<details class="answer"><summary><span class="label acc">官方答案</span>Tutorial 11 Exercise 4 Solution</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="809" height="408" src="../assets/img/tut11-ex4-sol.webp" alt="Tutorial 11 Exercise 4 官方答案"><figcaption>出处：Tut11-CC-2026.pdf 第 4 页</figcaption></figure>
+<p><b>讲解：</b>T1 在 unlock(Y) 之后又 write-lock(X)，违反 2PL；改法是把 unlock(Y) 推迟到 write-lock(X) 之后。T2 的三个加锁都在第一个解锁之前，符合。T3 把 Y 的 write-lock 降级成 read-lock 之后才去申请 write-lock(X)；<b>降级算一种解锁</b>，所以违反；改法是先 write-lock(X)，再降级。</p>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>2PL 的局限（课件第 24 页）</h3>
+<ul>
+<li>有些本来 serializable 的 schedule，2PL 不允许出现（它偏保守）。</li>
+<li>加锁会带来 <b>deadlock</b> 和 <b>livelock（starvation）</b>。</li>
+</ul>
+<div class="slides one"><a href="#" data-sl="w11-24"><img width="1067" height="600" alt="Week11-CC.pdf 第 24 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week11-CC.pdf 第 24 页。点图片看大图。</p>
+</div>
+
+<h2 id="deadlock" data-short="Deadlock 与 Starvation">4　Deadlock 和 Starvation</h2>
+<p><b>Deadlock（死锁）</b>：两个（或更多）事务互相等对方手里的锁，谁也动不了。只有 abort 掉其中一个或几个事务才能解开。</p>
+<p><b>Livelock / Starvation（饥饿）</b>：系统没有死锁，但某个事务一直排不上，无限期地等下去。解决办法是优先级：等得越久优先级越高，例如 FCFS（先来先服务）队列。</p>
+<h3>一个满足 2PL 却 deadlock 的例子（课件第 26–27 页）</h3>
+<p>T1 要先改 prod_qoh 再改 prod_status；T2 要先改 prod_status 再改 prod_qoh。X() 表示申请 exclusive lock。</p>
+<div class="scroll"><table>
+<tr><th>时间</th><th>T1</th><th>T2</th><th>结果</th></tr>
+<tr><td>t1</td><td>X(prod_qoh)</td><td></td><td>T1 拿到 qoh 的锁</td></tr>
+<tr><td>t2</td><td></td><td>X(prod_status)</td><td>T2 拿到 status 的锁</td></tr>
+<tr><td>t3</td><td>W(prod_qoh)</td><td></td><td></td></tr>
+<tr><td>t4</td><td>X(prod_status)</td><td></td><td>被 T2 占着，T1 等</td></tr>
+<tr><td>t5</td><td></td><td>X(prod_qoh)</td><td>被 T1 占着，T2 等。<b>Deadlock</b></td></tr>
+</table></div>
+<p>两个事务都只加锁、还没解锁，所以都符合 2PL。结论：<b>2PL 保证 serializable，但不能避免 deadlock。</b></p>
+<div class="slides"><a href="#" data-sl="w11-25"><img width="1067" height="600" alt="Week11-CC.pdf 第 25 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-26"><img width="1067" height="600" alt="Week11-CC.pdf 第 26 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-27"><img width="1067" height="600" alt="Week11-CC.pdf 第 27 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week11-CC.pdf 第 25–27 页。点图片看大图。</p>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2023 Q4-4 / 2024 Q4-3：写一个符合 2PL 但 deadlock 的 schedule</summary><div class="body">
+<p>用 X 和 Y 两个数据项写最省事：</p>
+<p class="ans-en">No, basic 2PL cannot avoid deadlock. Example:<br>
+T1: write-lock(X); write-item(X); write-lock(Y); …<br>
+T2: write-lock(Y); write-item(Y); write-lock(X); …<br>
+Schedule: T1: write-lock(X); T2: write-lock(Y); T1: w(X); T2: w(Y); T1: write-lock(Y) → T1 waits for T2; T2: write-lock(X) → T2 waits for T1.<br>
+Both transactions obey 2PL (no lock is requested after an unlock), but T1 is waiting for the lock on Y held by T2, and T2 is waiting for the lock on X held by T1. Neither can proceed: a deadlock. The wait-for graph has a cycle T1 → T2 → T1.</p>
+<p>只有 Conservative 2PL（开始前一次拿到全部的锁）不会 deadlock，见第 6 节。</p>
+</div></details>
+
+<h2 id="waitfor" data-short="Wait-for Graph">5　Wait-for Graph：检测 deadlock</h2>
+<ul>
+<li>每个<b>活跃的事务</b>是一个节点。</li>
+<li>Ti 在等 Tj 释放某个数据的锁，就画一条边 <b>Ti → Tj</b>。</li>
+<li>边是动态的：开始等的时候加上，拿到锁就去掉。</li>
+<li><b>图里有环 = deadlock。</b></li>
+</ul>
+<p>课件第 30 页的例子：<code>s1(A); r1(A); x2(B); w2(B); s1(B); s3(C); r3(C); x2(C); x4(B); x3(A);</code>（s = 申请 shared lock，x = 申请 exclusive lock）</p>
+<div class="scroll"><table>
+<tr><th>操作</th><th>发生了什么</th><th>加的边</th></tr>
+<tr><td>s1(A)</td><td>T1 拿到 A 的读锁</td><td></td></tr>
+<tr><td>x2(B)</td><td>T2 拿到 B 的写锁</td><td></td></tr>
+<tr><td>s1(B)</td><td>B 被 T2 写锁占着，T1 等</td><td>T1 → T2</td></tr>
+<tr><td>s3(C)</td><td>T3 拿到 C 的读锁</td><td></td></tr>
+<tr><td>x2(C)</td><td>C 被 T3 读锁占着，T2 等</td><td>T2 → T3</td></tr>
+<tr><td>x4(B)</td><td>B 被 T2 占着，T4 等</td><td>T4 → T2</td></tr>
+<tr><td>x3(A)</td><td>A 被 T1 读锁占着，T3 等</td><td>T3 → T1</td></tr>
+</table></div>
+<p>T1 → T2 → T3 → T1 成环，所以 deadlock。T4 只是在等，不在环里。</p>
+<div class="slides"><a href="#" data-sl="w11-28"><img width="1067" height="600" alt="Week11-CC.pdf 第 28 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-29"><img width="1067" height="600" alt="Week11-CC.pdf 第 29 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-30"><img width="1067" height="600" alt="Week11-CC.pdf 第 30 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week11-CC.pdf 第 28–30 页。点图片看大图。</p>
+
+<h3>处理 deadlock 的办法</h3>
+<p><b>检测（detection）：</b>画 wait-for graph，发现环就挑一个事务（victim）abort 掉。或者用 <b>timeout</b>：等得超过规定时间就 abort，不管是不是真的 deadlock，这是实际中常用的办法。</p>
+<p><b>预防（prevention）：</b>按事务的时间戳定优先级，越老（时间戳越小）优先级越高。当 Ti 要的锁被 Tj 占着时：</p>
+<div class="scroll"><table>
+<tr><th>Ti 是……</th><th>Wait-Die</th><th>Wound-Wait</th></tr>
+<tr><td>比 Tj <b>老</b></td><td>Ti <b>等</b></td><td>Ti 抢占，<b>Tj 被 abort</b>（wound）</td></tr>
+<tr><td>比 Tj <b>年轻</b></td><td><b>Ti 被 abort</b>（die）</td><td>Ti <b>等</b></td></tr>
+</table></div>
+<p>记法：名字里的两个词，前一个是老事务的做法，后一个是年轻事务的做法。Wait-Die：老的 wait，年轻的 die。Wound-Wait：老的 wound 别人，年轻的 wait。两种办法都不会产生 deadlock。被 abort 的年轻事务重启时<b>保留原来的时间戳</b>，这样它迟早会变成最老的，不会 starvation。</p>
+<div class="slides"><a href="#" data-sl="w11-31"><img width="1067" height="600" alt="Week11-CC.pdf 第 31 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-32"><img width="1067" height="600" alt="Week11-CC.pdf 第 32 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-33"><img width="1067" height="600" alt="Week11-CC.pdf 第 33 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week11-CC.pdf 第 31–33 页。点图片看大图。</p>
+
+<h3>真题：2023 Q7（10 分）</h3>
+<figure class="shot"><img loading="lazy" width="748" height="132" src="../assets/img/exam-2023-q7.webp" alt="2023 年试卷 Question 7：解释 deadlock 和 starvation；什么是 wait-for graph"><figcaption>出处：EXAM/2023.pdf 第 9 页</figcaption></figure>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2023 Q7 两问</summary><div class="body">
+<p><b>7-1</b></p>
+<p class="ans-en">Deadlock occurs when two (or more) transactions are each waiting for locks on items held by the other, so none of them can proceed. For example, T1 holds a lock on X and requests Y, while T2 holds a lock on Y and requests X. A deadlock can only be resolved by aborting one or more of the transactions.<br><br>
+Starvation (livelock) occurs when a transaction is left in a waiting state indefinitely, unable to acquire the locks it needs, although the system is not in deadlock (other transactions keep proceeding). It can be avoided by a priority system such as a first-come-first-served queue, where the longer a transaction waits, the higher its priority.</p>
+<p><b>7-2</b></p>
+<p class="ans-en">A wait-for graph is used to detect deadlocks during the execution of a schedule. Each node is an active transaction. There is an edge Ti → Tj if and only if Ti is waiting for Tj to release a lock on some item. Edges are added when a lock request is queued and removed when the lock is granted. A cycle in the wait-for graph means there is a deadlock. The DBMS checks the graph periodically; when a cycle is found, it selects a victim transaction and aborts it to break the cycle.</p>
+<p>每问 5 分，各配一张小图（两个节点互相指的环）更完整。</p>
+</div></details>
+
+<h2 id="variations" data-short="四种 2PL">6　四种 2PL</h2>
+<p>四种都保证 serializable，区别在于<b>什么时候拿锁、什么时候放锁</b>。</p>
+<div class="scroll"><table>
+<tr><th>名称</th><th>拿锁</th><th>放锁</th><th>特点</th></tr>
+<tr><td><b>Basic 2PL</b></td><td>用到时再拿</td><td>不再需要加锁之后，逐个放</td><td>可能 deadlock；可能 cascading rollback</td></tr>
+<tr><td><b>Conservative 2PL</b></td><td>开始之前<b>一次拿齐</b>所有要用的锁，拿不齐就一个都不拿、等着</td><td>逐个放</td><td><b>不会 deadlock</b>（四种里唯一的）</td></tr>
+<tr><td><b>Strict 2PL</b></td><td>用到时再拿</td><td><b>写锁</b>（X lock）一直持有到 commit 或 abort；读锁可以早放</td><td>得到 strict schedule，没有 dirty read；可能 deadlock</td></tr>
+<tr><td><b>Rigorous 2PL</b></td><td>用到时再拿</td><td><b>所有锁</b>都持有到 commit 或 abort</td><td>最严格，最容易实现；可能 deadlock</td></tr>
+</table></div>
+<div class="slides"><a href="#" data-sl="w11-34"><img width="1067" height="600" alt="Week11-CC.pdf 第 34 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-35"><img width="1067" height="600" alt="Week11-CC.pdf 第 35 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-36"><img width="1067" height="600" alt="Week11-CC.pdf 第 36 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-37"><img width="1067" height="600" alt="Week11-CC.pdf 第 37 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week11-CC.pdf 第 34–37 页。点图片看大图。</p>
+
+<h3>例题：Tutorial 11 Exercise 1</h3>
+<figure class="shot"><img loading="lazy" width="810" height="400" src="../assets/img/tut11-ex1-q.webp" alt="Tutorial 11 Exercise 1：schedule S 在 Basic 2PL 和 Conservative 2PL 下是否允许"><figcaption>出处：Tut11-CC-2026.pdf 第 1 页</figcaption></figure>
+<details class="answer"><summary><span class="label acc">官方答案</span>Tutorial 11 Exercise 1 Solution</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="809" height="263" src="../assets/img/tut11-ex1-sol.webp" alt="Tutorial 11 Exercise 1 官方答案"><figcaption>出处：Tut11-CC-2026.pdf 第 3 页</figcaption></figure>
+<p><b>讲解：</b>S 是 <code>r1(X); r2(X); w1(X); w2(X); c1; c2</code>，就是 lost update 的形状。<b>Basic 2PL：</b>T1 和 T2 都拿了 X 的读锁。T1 要写 X 需要写锁，但 T2 的读锁还在，而且 T2 后面还要申请写锁，所以它不能提前放读锁（放了就进入 shrinking phase，不能再加锁）。T1:W(X) 无法在这个位置执行，不允许。<b>Conservative 2PL：</b>事务开始前要拿齐所有锁，T1 一开始就拿了 X 的写锁，T2 根本无法开始，T2:R(X) 不可能出现在 T1:W(X) 之前，不允许。</p>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>Tutorial 11 Exercise 2：Strict 2PL 怎样防止问题</h3>
+<p>题目在上面的截图同一页（Tut11-CC-2026.pdf 第 1 页），这里直接讲官方答案（第 3 页）的思路：</p>
+<ul>
+<li><b>A.</b> <code>T1:R(X), T1:R(Y), T2:R(Z), T1:W(X), T2:R(X), T1:W(Y), T2:W(X)</code>：T2:R(X) 读的是 T1 未提交的 X，如果 T1 abort 就是 Dirty Read。Strict 2PL 下 T1 的写锁要到 commit 才放，T2:R(X) 必须等。官方给出的修改后 schedule：<code>T1:R(X), T1:R(Y), T2:R(Z), T1:W(X), T1:W(Y), T2:R(X), T2:W(X)</code>。</li>
+<li><b>B.</b> <code>T2:R(Z), T2:R(X), T1:R(X), T1:R(Y), T1:W(X), T2:W(X), T1:W(Y)</code>：两个事务都读了旧的 X，T2 覆盖了 T1 的写，是 Lost Update。Strict 2PL 下 T2 持有 X 的读锁，T1 拿不到写锁。官方给出的修改后 schedule：<code>T2:R(Z), T2:R(X), T2:W(X), T1:R(X), T1:R(Y), T1:W(X), T1:W(Y)</code>。</li>
+</ul>
+</div>
+
+<h2 id="pg-vs-wfg" data-short="两种图的区别">7　Precedence Graph 和 Wait-for Graph 别混</h2>
+<div class="scroll"><table>
+<tr><th></th><th>Precedence graph</th><th>Wait-for graph</th></tr>
+<tr><td>用来检查</td><td>schedule 是不是 conflict serializable（对不对）</td><td>有没有 deadlock（能不能进行下去）</td></tr>
+<tr><td>边 Ti → Tj 的意思</td><td>Ti 的操作和 Tj 的操作冲突，而且 Ti 的在前</td><td>Ti 正在等 Tj 放锁</td></tr>
+<tr><td>有环说明</td><td>不是 conflict serializable</td><td>deadlock</td></tr>
+<tr><td>什么时候画</td><td>拿到一个完整的 schedule 之后</td><td>执行过程中，DBMS 定期检查</td></tr>
+</table></div>
+<p>课件还提到：同一对事务，在 precedence graph 里是 Ti → Tj（Ti 先做），在 wait-for graph 里可能正好是反方向 Tj → Ti（Tj 等 Ti 放锁）。</p>
+<div class="slides"><a href="#" data-sl="w11-38"><img width="1067" height="600" alt="Week11-CC.pdf 第 38 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-39"><img width="1067" height="600" alt="Week11-CC.pdf 第 39 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week11-CC.pdf 第 38、39 页。点图片看大图。</p>
+
+<h2 id="to" data-short="Timestamp Ordering">8　Timestamp Ordering（TO）：必考的填表题</h2>
+<p>TO 不用锁，所以<b>没有等待，也没有 deadlock</b>。做法：</p>
+<ul>
+<li>每个事务开始时拿到一个<b>时间戳</b> TS(T)。编号越大越<b>年轻</b>（T78 比 T76 年轻）。</li>
+<li>每个 data item 记两个时间戳：<b>R</b>（read timestamp，读过它的事务里最年轻的那个）和 <b>W</b>（write timestamp，最后写它的事务）。</li>
+<li>TO 强制让结果等价于“按时间戳从小到大串行执行”。谁的操作违反了这个顺序，谁就被<b>回滚（rollback）</b>并用新的时间戳重启。</li>
+</ul>
+<div class="note key"><b>只有两条规则。</b>设事务 T 的时间戳是 t：<br>
+<b>T 要读 X：</b>如果 t &lt; W(X)（比 T 年轻的事务已经写过 X）→ 回滚 T。否则允许读，R(X) = max(t, R(X))。<br>
+<b>T 要写 X：</b>如果 t &lt; R(X) 或 t &lt; W(X)（比 T 年轻的事务已经读过或写过 X）→ 回滚 T。否则允许写，更新 X 的值，W(X) = t。</div>
+<p>直觉：<b>老事务来晚了</b>。老事务本该排在前面，但年轻事务已经先动了这个数据，老事务再读或写就乱了顺序，所以老的那个回滚。这就是课件说的 “the younger transaction takes priority”。</p>
+<p>填表时的三个约定：</p>
+<ol>
+<li>每格写成 <code>值, W时间戳, R时间戳</code>，例如 <code>a, W0, R76</code>。</li>
+<li><b>计算步骤</b>（如 A := f1(A)）只在事务自己的内存里算，数据库里什么都没变，这一行<b>留空</b>。</li>
+<li>读的时候 R 取 max：老事务读一个已经被年轻事务读过的数据，R <b>不变</b>。</li>
+</ol>
+<div class="slides"><a href="#" data-sl="w11-40"><img width="1067" height="600" alt="Week11-CC.pdf 第 40 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-41"><img width="1067" height="600" alt="Week11-CC.pdf 第 41 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-42"><img width="1067" height="600" alt="Week11-CC.pdf 第 42 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-43"><img width="1067" height="600" alt="Week11-CC.pdf 第 43 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week11-CC.pdf 第 40–43 页。点图片看大图。</p>
+
+<h3>课件例题（第 44–45 页）</h3>
+<div class="slides"><a href="#" data-sl="w11-44"><img width="1067" height="600" alt="Week11-CC.pdf 第 44 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-45"><img width="1067" height="600" alt="Week11-CC.pdf 第 45 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week11-CC.pdf 第 44、45 页。点图片看大图。</p>
+<p>课件的表是<span class="label acc">官方答案</span>（课件把时间戳写成 Wa、Rt76 的样子，tutorial 和考试写成 W0、R76，意思一样）。用下面的工具一步步重放，先自己想这一行该填什么，再点“下一步”：</p>
+<div class="to-tool" data-items="A,B,C" data-rows="T76 R A;T76 C A f1;T78 R B;T76 W A;T77 R C;T77 C C f2;T78 R C;T77 W C;T76 R B;T78 C B f3;T78 W B;T76 C B f4;T76 W B"></div>
+<p>两个回滚点：</p>
+<ul>
+<li><b>t8</b>：T77 要写 C，但 R(C) = 78，更年轻的 T78 已经读过 C。t77 &lt; 78，T77 回滚，C 不变。T77 会拿到一个新的、比 t78 大的时间戳重启。</li>
+<li><b>t13</b>：T76 要写 B，但 B 的 W 和 R 都是 78。T76 回滚。T76 在 t4 写过 A，所以 <b>A 要恢复</b>成原来的值和时间戳（课件原话：The original timestamps of A will be recovered）。</li>
+</ul>
+
+<h3>例题：Tutorial 11 Exercise 5</h3>
+<figure class="shot"><img loading="lazy" width="803" height="427" src="../assets/img/tut11-ex5-q.webp" alt="Tutorial 11 Exercise 5：T91、T92、T93 的 13 步 schedule"><figcaption>出处：Tut11-CC-2026.pdf 第 2 页</figcaption></figure>
+<details class="answer"><summary><span class="label acc">官方答案</span>Tutorial 11 Exercise 5 Solution</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="787" height="712" src="../assets/img/tut11-ex5-sol.webp" alt="Tutorial 11 Exercise 5 官方答案"><figcaption>出处：Tut11-CC-2026.pdf 第 4 页</figcaption></figure>
+<p><b>逐步重放</b>（工具的输出已和官方答案的表逐格核对）：</p>
+<div class="to-tool" data-items="X,Y,Z" data-rows="T92 R X;T92 C X f1;T91 R Z;T92 W X;T93 R Y;T93 C Y f2;T91 R Y;T93 W Y;T92 R Z;T91 C Z f3;T91 W Z;T92 C Z f4;T92 W Z"></div>
+<p>三个要点和官方答案的三条说明对应：t7 老事务 T91 读 Y，允许，R 仍是 93；t9 T92 读 Z，R 从 91 变成 92；t11 T91 要写 Z，但 t91 &lt; R(Z) = 92，回滚。之后 t13 T92 写 Z 成功。</p>
+</div></details>
+
+<h3>真题：2023 Q6、2024 Q9、2025 Q11（同一个 schedule）</h3>
+<figure class="shot"><img loading="lazy" width="750" height="914" src="../assets/img/exam-2025-q11.webp" alt="2025 年试卷 Question 11：T33、T34、T35 的 13 步 TO 填表"><figcaption>出处：EXAM/2025.pdf 第 10 页</figcaption></figure>
+<p>三年的题只换了事务编号和数据项名字：2023 年是 T96、T97、T98 和 A、B、C（10 分）；2024 年是 T77、T78、T79 和 X、Y、Z；2025 年是 T33、T34、T35 和 X、Y、Z。操作的位置完全相同。下面按 2025 年的编号做。</p>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2025 Q11 的 13 步（程序按课件规则生成）</summary><div class="body">
+<div class="to-tool" data-items="X,Y,Z" data-all data-rows="T33 R X;T33 C X f1;T34 R Z;T33 W X;T35 R Y;T35 C Y f2;T34 R Y;T35 W Y;T33 R Z;T34 C Z f3;T34 W Z;T33 C Z f4;T33 W Z"></div>
+<p><b>关键的几步：</b></p>
+<ul>
+<li>t7：T34 读 Y。W(Y) = 0，允许。R(Y) = max(34, 35) = 35，不变。</li>
+<li>t9：T33 读 Z。允许。R(Z) = max(33, 34) = 34，不变。</li>
+<li>t11：T34 写 Z。34 不小于 R(Z) = 34 和 W(Z) = 0，允许。Z 变成 f3(z), W34, R34。</li>
+<li>t13：T33 写 Z。t33 &lt; R(Z) = 34（也小于 W(Z) = 34），<b>T33 回滚</b>。Z 保持 f3(z), W34, R34。T33 在 t4 写过 X，X 恢复成 x, W0, R0。</li>
+</ul>
+<p>“Briefly describe what may happen” 这一句要用文字回答：</p>
+<p class="ans-en">At t13, T33 wants to write Z, but t33 &lt; R(Z) = t34 and t33 &lt; W(Z) = t34, i.e., a younger transaction T34 has already read and written Z. Under the basic TO rules T33 is rolled back and will be restarted with a new timestamp. The update T33 made on X at t4 is undone, so X is restored to (x, W0, R0). All other operations are allowed.</p>
+<p><span class="label">没把握的地方</span>t13 那一行 X 是否要写回 x, W0, R0，我是按课件第 45 页例题最后一行的做法（把 A 恢复成 a, Wa, Ra）来的。试卷没有官方答案。</p>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<div class="shots">
+<figure class="shot"><img loading="lazy" width="749" height="1000" src="../assets/img/exam-2023-q6.webp" alt="2023 年试卷 Question 6"><figcaption>出处：EXAM/2023.pdf 第 8 页</figcaption></figure>
+</div>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2023 Q6（T96、T97、T98，A、B、C）</summary><div class="body">
+<div class="to-tool" data-items="A,B,C" data-all data-rows="T96 R A;T96 C A f1;T97 R C;T96 W A;T98 R B;T98 C B f2;T97 R B;T98 W B;T96 R C;T97 C C f3;T97 W C;T96 C C f4;T96 W C"></div>
+<p>t13：T96 要写 C，t96 &lt; R(C) = W(C) = 97，T96 回滚，A 恢复成 a, W0, R0。</p>
+</div></details>
+</div>
+
+<h3>自己试：TO 填表工具</h3>
+<p>可以改 schedule。每行一步：事务、操作（R、W，或 C 表示本地计算）、数据项。</p>
+<div class="to-tool" data-items="X,Y,Z" data-edit data-presets="2024 Q9（T77、T78、T79）|T77 R X;T77 C X f1;T78 R Z;T77 W X;T79 R Y;T79 C Y f2;T78 R Y;T79 W Y;T77 R Z;T78 C Z f3;T78 W Z;T77 C Z f4;T77 W Z;;Tutorial 11 Ex 5|T92 R X;T92 C X f1;T91 R Z;T92 W X;T93 R Y;T93 C Y f2;T91 R Y;T93 W Y;T92 R Z;T91 C Z f3;T91 W Z;T92 C Z f4;T92 W Z"></div>
+
+<h2 id="thomas" data-short="Thomas Write Rule">9　Thomas Write Rule</h2>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<p>对 basic TO 的一个放宽。老事务 T 要<b>写</b> X 时：</p>
+<ul>
+<li>如果 t &lt; R(X)：年轻事务已经读过，照旧回滚 T。</li>
+<li>如果 t ≥ R(X) 但 t &lt; W(X)：年轻事务已经<b>写</b>过了，但没有人读过中间的值。这时<b>直接忽略</b> T 的这次写，T 不回滚，继续执行。</li>
+</ul>
+<p>理由：按时间戳顺序，T 的写本来就应该被那个年轻事务的写覆盖，而且中间没人会读到它，所以写不写都一样。</p>
+<p>课件第 48 页的例子：T1: R(A)；T2: W(A), Commit；T1: W(A), Commit。它的 precedence graph 有环（r1(A) 在 w2(A) 前，w2(A) 在 w1(A) 前），不是 conflict serializable，basic TO 会回滚 T1。用 Thomas Write Rule，T1 的 W(A) 被忽略，效果等于 T1 然后 T2。所以这条规则会允许一些<b>不是 conflict serializable、但结果正确</b>的 schedule。</p>
+<div class="slides"><a href="#" data-sl="w11-46"><img width="1067" height="600" alt="Week11-CC.pdf 第 46 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-47"><img width="1067" height="600" alt="Week11-CC.pdf 第 47 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w11-48"><img width="1067" height="600" alt="Week11-CC.pdf 第 48 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week11-CC.pdf 第 46–48 页。点图片看大图。</p>
+</div>
+<p class="only-detail-hint">Thomas Write Rule 往年没有考过，内容在“细化讲解”里。</p>
+
+<h2 id="variants" data-short="进阶变式题">10　进阶变式题</h2>
+<p>答案由本页工具的程序生成。程序先用课件第 45 页的例题和 Tutorial 11 Exercise 5 的官方答案逐格核对过。</p>
+<div class="problem"><p class="title">变式 1　读的时候被回滚</p>
+<p>T11、T12、T13（t11 &lt; t12 &lt; t13），数据项 A、B，初始 A: (a, W0, R0)，B: (b, W0, R0)。</p>
+<p class="seq">T12 Read(A); T11 Read(A); T12 Write(A); T11 Read(B); T13 Read(B); T11 Write(B); T13 Write(A); T12 Read(B)</p></div>
+<details class="answer"><summary><span class="label">程序生成的答案</span>变式 1</summary><div class="body">
+<div class="to-tool" data-items="A,B" data-all data-rows="T12 R A;T11 R A;T12 W A;T11 R B;T13 R B;T11 W B;T13 W A;T12 R B"></div>
+<p>t2：T11 读 A，R(A) 保持 12。t6：T11 写 B，但 R(B) = 13，T11 回滚；它之前没写过东西，不用恢复。t7：T13 写 A，W(A) 变成 13，R(A) 仍是 12。t8：T12 读 B，W(B) = 0，允许，R(B) 仍是 13。</p>
+</div></details>
+<div class="problem"><p class="title">变式 2　连续两个事务被回滚</p>
+<p>T21、T22、T23（t21 &lt; t22 &lt; t23），数据项 P、Q。</p>
+<p class="seq">T21 Read(P); T22 Read(Q); T23 Read(P); T22 Write(P); T21 Write(Q); T23 Write(Q); T22 Read(Q); T21 Read(P)</p></div>
+<details class="answer"><summary><span class="label">程序生成的答案</span>变式 2</summary><div class="body">
+<div class="to-tool" data-items="P,Q" data-all data-rows="T21 R P;T22 R Q;T23 R P;T22 W P;T21 W Q;T23 W Q;T22 R Q;T21 R P"></div>
+<p>t4：T22 写 P，但 R(P) = 23，回滚。t5：T21 写 Q，但 R(Q) = 22，回滚。t6：T23 写 Q 成功。最后两步属于已经回滚的事务，不再执行（它们会用新时间戳整个重做）。</p>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<div class="problem"><p class="title">变式 3　Wait-for graph</p>
+<p class="seq">x1(A); s2(B); x3(C); s1(B); x2(C); s3(A); x4(A)</p>
+<p>s = 申请 shared lock，x = 申请 exclusive lock。画 wait-for graph，判断有没有 deadlock。</p></div>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>变式 3（手工推导，没有程序验证）</summary><div class="body">
+<ul>
+<li>x1(A)：T1 拿到 A 的写锁。s2(B)：T2 拿到 B 的读锁。x3(C)：T3 拿到 C 的写锁。</li>
+<li>s1(B)：B 上只有 T2 的读锁，读锁可以共享，T1 <b>拿到</b>，不用等。</li>
+<li>x2(C)：C 被 T3 写锁占着，T2 等。边 T2 → T3。</li>
+<li>s3(A)：A 被 T1 写锁占着，T3 等。边 T3 → T1。</li>
+<li>x4(A)：A 被 T1 占着，T4 等。边 T4 → T1。</li>
+</ul>
+<p>边只有 T2 → T3、T3 → T1、T4 → T1，T1 没有在等任何人，所以<b>没有环，没有 deadlock</b>。T1 做完放锁后，其余事务依次可以继续。陷阱在 s1(B)：两个读锁不冲突。</p>
+</div></details>
+</div>
+
+<h2 id="summary" data-short="本章小结">11　本章小结</h2>
+<ul>
+<li>光加锁不保证 serializable；2PL（所有加锁在第一个解锁之前）保证。</li>
+<li>2PL 可能 deadlock 和 livelock。四种 2PL 里只有 Conservative 2PL 不会 deadlock。</li>
+<li>Wait-for graph 有环 = deadlock；解决办法是 abort 环里的一个事务。Livelock 用 FCFS 队列解决。</li>
+<li>Precedence graph 和 wait-for graph 的边方向可能相反。</li>
+<li>TO 保证 serializable 而且没有 deadlock。数据项有 R、W 两个时间戳。编号大的事务年轻，冲突时年轻的优先，老的回滚。</li>
+</ul>
+<div class="slides one"><a href="#" data-sl="w11-49"><img width="1067" height="600" alt="Week11-CC.pdf 第 49 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week11-CC.pdf 第 49 页。点图片看大图。</p>
+
+<h2 id="quiz" data-short="小测">12　小测</h2>
+<div class="quiz" data-quiz="quiz-data"></div>
+<script type="application/json" id="quiz-data">[
+{"id":"q1","q":"X 现在是 (x, W0, R78)。T76 要 Read(X)。按 basic TO，结果是？","options":["T76 回滚","允许读，X 变成 (x, W0, R76)","允许读，X 仍是 (x, W0, R78)","允许读，X 变成 (x, W76, R78)"],"answer":2,"why":"读只检查 W：76 ≥ 0，允许。R = max(76, 78) = 78，不变。读不会改 W。"},
+{"id":"q2","q":"Z 现在是 (z, W0, R92)。T91 要 Write(Z)。结果是？","options":["允许写，Z 变成 (f(z), W91, R92)","T91 回滚，因为 t91 < R(Z)","T92 回滚","允许写，Z 变成 (f(z), W91, R91)"],"answer":1,"why":"写要检查 R 和 W。91 < R(Z) = 92：更年轻的 T92 已经读过 Z，老事务 T91 回滚。这是 Tutorial 11 Exercise 5 的 t11。"},
+{"id":"q3","q":"TO 填表时，遇到 A := f1(A) 这样的计算步骤，这一行应该：","options":["把 A 的值改成 f1(a)","把 W 改成当前事务","留空，数据库没有变化","把 R 改成当前事务"],"answer":2,"why":"计算只发生在事务自己的内存里。只有 Read 和 Write 才会改变数据项的时间戳或值。"},
+{"id":"q4","q":"2PL 的定义是？","options":["事务开始前拿齐所有锁","事务里所有加锁操作都在第一个解锁操作之前","所有锁都持有到 commit","每个数据最多加两次锁"],"answer":1,"why":"这是 Basic 2PL 的定义：growing phase 只加锁，shrinking phase 只解锁。选项一是 Conservative，选项三是 Rigorous。"},
+{"id":"q5","q":"四种 2PL 里，哪一种不会 deadlock？","options":["Basic 2PL","Strict 2PL","Rigorous 2PL","Conservative 2PL"],"answer":3,"why":"Conservative 2PL 在开始前一次拿齐所有锁，拿不齐就一个都不拿，所以不会出现“拿着一个等另一个”的情况。"},
+{"id":"q6","q":"Wait-for graph 里的边 T1 → T2 表示：","options":["T1 的操作在 T2 的冲突操作之前","T1 正在等 T2 释放锁","T2 正在等 T1 释放锁","T1 比 T2 老"],"answer":1,"why":"Wait-for graph：Ti → Tj 当且仅当 Ti 在等 Tj 放锁。选项一是 precedence graph 的边。"},
+{"id":"q7","q":"Wait-Die 策略下，年轻事务 Ti 要的锁被老事务 Tj 占着。会怎样？","options":["Ti 等","Ti 被 abort","Tj 被 abort","两个都 abort"],"answer":1,"why":"Wait-Die：老的等（wait），年轻的死（die）。年轻事务被 abort，之后用原来的时间戳重启。"},
+{"id":"q8","q":"下面哪句话是对的？","options":["2PL 保证没有 deadlock","只要加了锁，schedule 就一定 serializable","TO 没有 deadlock，因为它不用锁、不等待","Starvation 就是 deadlock 的另一个名字"],"answer":2,"why":"TO 发现冲突就直接回滚，没有等待，所以不会 deadlock。2PL 保证 serializable 但可能 deadlock；光加锁不够；starvation 是无限期等待，系统并没有死锁。"}
+]</script>
+
+<nav class="pager" aria-label="翻页"><a rel="prev" href="tx.html">← 第 2 章 事务与调度</a><a rel="next" href="recovery.html">第 4 章 Recovery →</a></nav>
+<p class="kbd-hint">键盘：<kbd>←</kbd> <kbd>→</kbd> 在小节之间翻页。</p>
+</div></main>
+</div>
+<script src="../assets/js/tools-core.js"></script>
+<script src="../assets/js/tools-ui.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

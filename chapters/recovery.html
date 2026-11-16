@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="quick">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 4 章 Recovery · INFS7903 期末复习</title>
+<link rel="stylesheet" href="../assets/css/site.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
+</head>
+<body data-chapter="recovery" data-base="../">
+<header class="top">
+  <button type="button" class="icon-btn menu-btn" aria-label="打开目录">目录</button>
+  <a class="brand" href="../index.html">INFS7903 <small>期末复习</small></a>
+  <span class="grow"></span>
+  <span class="top-progress"></span>
+  <div class="seg" role="group" aria-label="阅读模式">
+    <button type="button" data-mode-btn="quick" aria-pressed="true">一天速通</button>
+    <button type="button" data-mode-btn="detail" aria-pressed="false">细化讲解</button>
+  </div>
+  <button type="button" class="icon-btn" data-theme-btn>深色</button>
+</header>
+<div class="shell">
+<nav class="side" aria-label="目录"></nav>
+<main><div class="doc">
+<p class="kicker">第 4 章 · WEEK 12 · DATABASE RECOVERY</p>
+<h1>Recovery：日志、checkpoint 和恢复</h1>
+<p class="lede">Week 12 整节课：系统崩溃后怎么把数据库恢复到正确状态。给一份日志，画时间线，说出谁 Undo 谁 Redo。</p>
+<div class="meta"><span>速通约 60 分钟</span><span>2022 13 分，2023 14 分，2024 9/50，2025 5/50</span></div>
+<h2 id="why" data-short="为什么要 Recovery">1　为什么需要 Recovery</h2>
+<p>很多事情会出错：断电、磁盘磁头损坏、程序出错、死锁、用户中途取消。Recovery 要保证三件事（课件第 10 页）：</p>
+<ol>
+<li>事务 <b>commit</b> 了：它的修改必须永久保存，之后再出故障也不能丢。</li>
+<li>事务 <b>abort</b> 了：它在数据库里留下的修改必须全部抹掉，读过它数据的事务受到的影响也要抹掉。</li>
+<li>系统 <b>crash</b> 了：把数据库带回最近的一个一致状态。</li>
+</ol>
+<p>对应 ACID：Recovery 负责 <b>A</b>（atomicity）和 <b>D</b>（durability）；concurrency control 负责 I；约束、trigger 和程序员负责 C。</p>
+<div class="scroll"><table>
+<tr><th>故障类型</th><th>例子</th></tr>
+<tr><td>Transaction failure</td><td>输入错误、deadlock</td></tr>
+<tr><td>System failure</td><td>程序错误、操作系统故障、内存故障。内存里的东西丢了</td></tr>
+<tr><td>Media failure</td><td>磁头损坏（disk head crash）。磁盘上的东西丢了一部分</td></tr>
+</table></div>
+<div class="slides"><a href="#" data-sl="w12-5"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 5 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-6"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 6 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-7"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 7 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-10"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 10 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-11"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 11 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week12-Recovery.pdf 第 5–7、10、11 页。点图片看大图。</p>
+
+<h2 id="buffer" data-short="Buffer 与 flush">2　先弄清：内存和磁盘是两份</h2>
+<p>后面所有内容都建立在这个事实上：数据库的数据在<b>磁盘</b>上，但事务读写的是<b>内存里的副本</b>（buffer / cache page，一个 page 和一个磁盘 block 一样大）。</p>
+<ul>
+<li>事务 write(X)，只是改了内存里那一页。这一页和磁盘上的不一样了，叫 <b>dirty page</b>。</li>
+<li>把内存页写回磁盘叫 <b>flush</b>。什么时候 flush 由 buffer manager 决定，<b>不一定</b>在 commit 的时候。</li>
+<li>Crash 时<b>内存全丢</b>，磁盘上的还在。</li>
+</ul>
+<p>所以 crash 之后磁盘上可能有两种错：</p>
+<ul>
+<li>已经 commit 的事务，修改<b>还没</b>写到磁盘 → 要<b>补上</b>（Redo）。</li>
+<li>没 commit 的事务，修改<b>已经</b>写到磁盘 → 要<b>撤掉</b>（Undo）。</li>
+</ul>
+<div class="slides"><a href="#" data-sl="w12-8"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 8 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-9"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 9 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week12-Recovery.pdf 第 8、9 页。点图片看大图。</p>
+
+<h2 id="backup" data-short="备份">3　备份（backup）</h2>
+<ul>
+<li><b>Logical backup</b>：用 SQL 脚本把数据库内容导出成文件（比如 .csv）。</li>
+<li><b>Physical backup</b>：给数据库存一个快照，也叫 <b>database dump</b>，是磁盘的镜像。恢复时和 log、checkpoint 一起用。分 cold backup（停机做）和 hot backup（在线做）。</li>
+</ul>
+<div class="scroll"><table>
+<tr><th></th><th>Full backup</th><th>Differential backup</th><th>Incremental backup</th></tr>
+<tr><td>备份什么</td><td>全部数据</td><td>上次 <b>full</b> 之后变过的</td><td>上次<b>任何</b>备份之后变过的</td></tr>
+<tr><td>占空间</td><td>High</td><td>Medium to High</td><td>Low</td></tr>
+<tr><td>备份速度</td><td>Slowest</td><td>Fast</td><td>Fastest</td></tr>
+<tr><td>恢复速度</td><td>Fastest</td><td>Fast</td><td>Slowest</td></tr>
+<tr><td>恢复时需要</td><td>最近一次 full</td><td>最近一次 full + 最近一次 differential</td><td>最近一次 full + 之后<b>所有</b>的 incremental</td></tr>
+</table></div>
+<p><b>Dump 和 Log 的区别：</b>dump 是某一时刻整个数据库的拷贝，放在别处；log 是一本流水账，记录每个事务的 ID、操作、数据的 BFIM 和 AFIM，以及 checkpoint 记录。</p>
+<div class="slides"><a href="#" data-sl="w12-12"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 12 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-13"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 13 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-14"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 14 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-15"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 15 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week12-Recovery.pdf 第 12–15 页。点图片看大图。</p>
+
+<h2 id="log" data-short="Log、BFIM、AFIM">4　Log、BFIM 和 AFIM</h2>
+<p><b>Log</b> 按发生的先后顺序记录对数据库的所有修改。五种记录：</p>
+<div class="scroll"><table>
+<tr><th>记录</th><th>含义</th></tr>
+<tr><td><code>[start_transaction, T]</code></td><td>事务 T 开始</td></tr>
+<tr><td><code>[write_item, T, X, old_value, new_value]</code></td><td>T 把 X 从旧值改成新值</td></tr>
+<tr><td><code>[read_item, T, X]</code></td><td>T 读了 X</td></tr>
+<tr><td><code>[commit, T]</code></td><td>T 成功完成</td></tr>
+<tr><td><code>[abort, T]</code></td><td>T 被中止</td></tr>
+</table></div>
+<ul>
+<li><b>BFIM</b>（BeFore IMage）：修改<b>之前</b>的旧值。<b>Undo 用它</b>。</li>
+<li><b>AFIM</b>（AFter IMage）：修改<b>之后</b>的新值。<b>Redo 用它</b>。</li>
+</ul>
+<p>例如 <code>[write_item, T1, D, 10, 20]</code>：D 的 BFIM 是 10，AFIM 是 20。</p>
+<div class="slides"><a href="#" data-sl="w12-16"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 16 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-17"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 17 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-26"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 26 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week12-Recovery.pdf 第 16、17、26 页。点图片看大图。</p>
+
+<h2 id="wal" data-short="WAL 与 Commit Point">5　WAL（Write-Ahead Logging）</h2>
+<p><b>先写日志，后写数据。</b>日志必须先落到磁盘上（force-write），因为 crash 之后恢复全靠它。两条规则：</p>
+<ol>
+<li><b>为了能 Undo：</b>一个数据的 AFIM 被 flush 到数据库磁盘（覆盖掉 BFIM）<b>之前</b>，它的 BFIM 必须已经写进 log，并且 log 已经 force-write 到磁盘。保证 <b>Atomicity</b>。</li>
+<li><b>为了能 Redo：</b>事务 commit <b>之前</b>，它所有的 AFIM 必须已经写进 log，并且 log 已经 force-write 到磁盘。保证 <b>Durability</b>。</li>
+</ol>
+<p><b>Commit point：</b>事务的所有操作都成功执行，并且它们的效果都已经按 WAL 记进了 log，这时事务到达 commit point，往 log 里写一条 <code>[commit, T]</code>。过了这个点，它的修改就被认为是永久的。Crash 后，log 里有 start 但没有 commit 的事务需要 rollback。</p>
+<div class="slides"><a href="#" data-sl="w12-18"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 18 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-19"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 19 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-20"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 20 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week12-Recovery.pdf 第 18–20 页。点图片看大图。</p>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2023 Q11-2 / 2024 Q10-1：What is WAL? Why is it important in transaction recovery?</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="748" height="184" src="../assets/img/exam-2024-q10.webp" alt="2024 年试卷 Question 10：WAL 和 checkpoint 的简答"><figcaption>出处：EXAM/2024.pdf 第 11 页</figcaption></figure>
+<p class="ans-en">WAL (Write-Ahead Logging) is a protocol that requires log records to be force-written to stable storage before the corresponding changes are written to the database on disk. (1) For undo: before a data item's AFIM is flushed to the database disk, its BFIM must be recorded in the log and the log force-written to disk. (2) For redo: before a transaction commits, all its AFIMs must be recorded in the log and the log force-written to disk.<br><br>
+It is important because after a crash the contents of main memory are lost and the log is the only source for recovery. Rule (1) guarantees that uncommitted changes can always be undone using BFIMs (atomicity). Rule (2) guarantees that committed changes can always be redone using AFIMs (durability).</p>
+</div></details>
+
+<h2 id="checkpoint" data-short="Checkpoint">6　Checkpoint</h2>
+<p>如果每次恢复都要从 log 的第一行看起，太慢。所以系统定期做 <b>checkpoint</b>：log 里的一条记录，表示在这个时间点，内存里所有改过的页都已经写到磁盘，数据库状态和 log 是同步的。</p>
+<p>做 checkpoint 的四步（课件第 22 页）：</p>
+<ol>
+<li>暂停所有事务的执行。</li>
+<li>把内存里所有改过的 buffer force-write 到磁盘。</li>
+<li>往 log 里写一条 <code>[checkpoint]</code>，并把 log force-write 到磁盘。</li>
+<li>恢复事务的执行。</li>
+</ol>
+<div class="note key"><b>Checkpoint 的作用：</b>在 checkpoint <b>之前</b>已经 commit 的事务，修改肯定已经在磁盘上了，恢复时<b>不用管</b>。恢复只需要看 checkpoint 之后还在活动的事务。</div>
+<div class="slides"><a href="#" data-sl="w12-21"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 21 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-22"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 22 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week12-Recovery.pdf 第 21、22 页。点图片看大图。</p>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2024 Q10-2：What is a checkpoint? What information is recorded?</summary><div class="body">
+<p class="ans-en">A checkpoint is a log record of a consistent database state at a point in time; it is a point of synchronisation between the database and the transaction log. It is taken periodically: the DBMS suspends the execution of transactions, force-writes all modified main-memory buffers to disk, writes a [checkpoint] record to the log and force-writes the log to disk, then resumes the transactions.<br><br>
+The [checkpoint] record is recorded in the system log (it identifies the transactions that are active at that time). Its purpose is to reduce recovery work: transactions that committed before the checkpoint need no action, so recovery only needs to scan the log from the most recent checkpoint to the crash.</p>
+<p><span class="label">没把握的地方</span>“记录了什么信息”这一问，课件只写了 “Write a [checkpoint] record to the log”，以及 checkpoint 之后的事务被识别为 active transactions。括号里“当时活跃事务的列表”来自教材的一般说法，课件没有明写。</p>
+</div></details>
+
+<h2 id="undo-redo" data-short="Undo 与 Redo">7　Undo 和 Redo</h2>
+<div class="scroll"><table>
+<tr><th></th><th>Undo</th><th>Redo</th></tr>
+<tr><td>对象</td><td><b>没有 commit</b> 的事务</td><td><b>已经 commit</b> 的事务</td></tr>
+<tr><td>做什么</td><td>把 BFIM（旧值）写回去</td><td>把 AFIM（新值）再写一遍</td></tr>
+<tr><td>扫描 log 的方向</td><td><b>从后往前</b>（backward）</td><td><b>从前往后</b>（forward）</td></tr>
+<tr><td>保证</td><td>Atomicity</td><td>Durability</td></tr>
+</table></div>
+<p><b>为什么方向不同？</b>一个数据可能被改了好几次。Undo 要回到最早的状态，所以从最后一次修改往回退，一层层恢复，最后落在最老的 BFIM 上。Redo 要到达最新的状态，所以按原来的顺序从头重放，最后落在最新的 AFIM 上。课件的总结：Undo 从 crash 往回做到最近的 checkpoint；Redo 从最近的 checkpoint 往后做到事务 commit。</p>
+<div class="slides"><a href="#" data-sl="w12-23"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 23 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-25"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 25 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week12-Recovery.pdf 第 23、25 页。点图片看大图。</p>
+
+<h2 id="timeline" data-short="画时间线，分三类">8　考试的做法：画时间线，把事务分三类</h2>
+<p>给你一份 log，按下面的步骤做：</p>
+<ol>
+<li>画一条时间轴，标出 <b>checkpoint</b> 和 <b>crash</b> 两条竖线。</li>
+<li>每个事务画一条横线，从它的 start 画到它的 commit；没有 commit 的画到 crash。<b>线的长短以 log 里的行为准。</b></li>
+<li>把事务分成三类：</li>
+</ol>
+<div class="scroll"><table>
+<tr><th>类别</th><th>怎么认</th><th>Immediate update<br>（Steal / No-Force）</th><th>Deferred update<br>（No-Steal / No-Force）</th></tr>
+<tr><td>① checkpoint <b>之前</b>已 commit</td><td>commit 那一行在 [checkpoint] 上面</td><td>不用处理</td><td>不用处理</td></tr>
+<tr><td>② checkpoint <b>之后</b>、crash 之前 commit</td><td>commit 那一行在 [checkpoint] 下面。它什么时候 start 无所谓</td><td><b>Redo</b></td><td><b>Redo</b></td></tr>
+<tr><td>③ crash 时<b>还没 commit</b></td><td>log 里找不到它的 commit</td><td><b>Undo</b>，然后重启</td><td><b>忽略</b>（不用 undo），然后重启</td></tr>
+</table></div>
+<h3>课件例题（第 24、33–36 页）</h3>
+<div class="slides"><a href="#" data-sl="w12-24"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 24 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-33"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 33 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-34"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 34 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-36"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 36 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week12-Recovery.pdf 第 24、33、34、36 页。点图片看大图。</p>
+<p>下面的工具读同一份 log，画出时间线，并按所选策略给出每个事务的处理。先选 Deferred，再切到 Immediate 对比：</p>
+<div class="rec-tool" data-log="[start_transaction, T1]\n[write_item, T1, D, 10, 20]\n[commit, T1]\n[start_transaction, T3]\n[write_item, T3, B, 20, 15]\n[start_transaction, T4]\n[write_item, T4, A, 15, 20]\n[checkpoint]\n[start_transaction, T2]\n[write_item, T2, D, 20, 15]\n[start_transaction, T5]\n[write_item, T5, C, 15, 30]\n[commit, T3]\n[commit, T2]\nsystem crash!"></div>
+<p>课件的<span class="label acc">官方答案</span>：T1 在 checkpoint 前已 commit，不处理。T3、T2 在 checkpoint 后 commit，Redo。T4、T5 没有 commit：deferred update 下忽略它们的修改并重启；immediate update 下 Undo（从后往前：先把 C 恢复成 15，再把 A 恢复成 15），然后重启。工具的输出和这些一致。</p>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<p>注意 T3：它在 checkpoint <b>之前</b>就开始了，也在之前写了 B，但它的 commit 在 checkpoint <b>之后</b>，所以属于第 ② 类。分类只看 commit 的位置。课件第 36 页补充了一个细节：T3 对 B 的修改发生在 checkpoint 之前，那一次修改已经随 checkpoint 写到磁盘，所以 redo 时可以跳过它；T2 则要把 D 设成 15（它的 AFIM）。</p>
+<p><span class="label">说明</span>课件第 36 页的文字里写 “redo their changes … (for Steal/Force strategy)”，而第 28、35 页都写 Steal/Force 对应 Undo/No-Redo。我认为第 36 页括号里应该是 Steal/No-Force。答题按第 28 页的四种对应来写。</p>
+</div>
+
+<h2 id="policies" data-short="Steal / Force 四种组合">9　Steal / No-Steal，Force / No-Force</h2>
+<p>这两对词说的是 <b>dirty page 什么时候写回磁盘</b>：</p>
+<ul>
+<li><b>Steal</b>：事务还没 commit，它改过的页就<b>可以</b>被写到磁盘（比如内存满了要腾地方）。→ 磁盘上可能有未提交的修改 → <b>需要 Undo</b>。</li>
+<li><b>No-Steal</b>：事务 commit 之前，它改过的页<b>不能</b>写到磁盘。→ 不需要 Undo。代价是需要很大的内存。</li>
+<li><b>Force</b>：事务 commit 时，它改过的页<b>立刻全部</b>写到磁盘。→ 已提交的修改一定在磁盘上 → <b>不需要 Redo</b>。代价是 I/O 开销大。</li>
+<li><b>No-Force</b>：commit 时不强制写，等以后（checkpoint 或被 steal 时）再写。→ <b>需要 Redo</b>。</li>
+</ul>
+<div class="note key"><b>一句话记：Steal → 要 Undo；Force → 不用 Redo。</b>Steal / No-Steal 和 BFIM 有关；Force / No-Force 和 AFIM 有关。</div>
+<div class="scroll"><table>
+<tr><th></th><th>No-Steal</th><th>Steal</th></tr>
+<tr><td><b>Force</b></td><td>No-Undo / No-Redo<br>最简单，但不实用</td><td>Undo / No-Redo<br>Immediate update 的一种</td></tr>
+<tr><td><b>No-Force</b></td><td>No-Undo / Redo<br><b>Deferred update</b></td><td>Undo / Redo<br><b>Immediate update</b>，实际系统最常用</td></tr>
+</table></div>
+<div class="slides"><a href="#" data-sl="w12-27"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 27 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-28"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 28 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-29"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 29 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-30"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 30 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week12-Recovery.pdf 第 27–30 页。点图片看大图。</p>
+
+<h2 id="techniques" data-short="Deferred 与 Immediate">10　恢复技术：Deferred Update 和 Immediate Update</h2>
+<h3>Deferred update（No-Steal / No-Force，No-Undo / Redo）</h3>
+<ul>
+<li>事务到达 commit point 之前，<b>不</b>把修改写进数据库。</li>
+<li>所以没提交的事务在磁盘上没留下任何东西：<b>不需要 Undo</b>，也不会有 cascading rollback。</li>
+<li>恢复时：<b>Redo</b> 最近一次 checkpoint 之后 commit 的事务；没 commit 的事务<b>忽略并重启</b>。</li>
+</ul>
+<h3>Immediate update（Steal，配 Force 或 No-Force）</h3>
+<ul>
+<li>log 写好之后就马上更新数据库的 buffer，buffer 随时可能被写到磁盘。</li>
+<li>恢复时：没 commit 的事务都要 <b>Undo</b>（用 BFIM）；已 commit 的事务在 <b>No-Force</b> 下要 <b>Redo</b>（用 AFIM），在 <b>Force</b> 下不用 Redo。</li>
+</ul>
+<div class="slides"><a href="#" data-sl="w12-31"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 31 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-32"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 32 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-35"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 35 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week12-Recovery.pdf 第 31、32、35 页。点图片看大图。</p>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>另外两种技术（了解）</h3>
+<p><b>Shadow paging：</b>事务执行期间维护两张页表，current 和 shadow。Shadow 页表不改动，用于恢复；事务完成时 current 页表变成新的 shadow。</p>
+<p><b>Accelerated Database Recovery（ADR）：</b>SQL Server 的技术。不管有多少活跃事务、事务多大，恢复都很快而且一致；事务回滚是即时的。它是为长时间运行的事务提高可用性而设计的。</p>
+<div class="slides"><a href="#" data-sl="w12-37"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 37 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w12-38"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 38 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week12-Recovery.pdf 第 37、38 页。点图片看大图。</p>
+</div>
+
+<h2 id="example-tut" data-short="例题：Tutorial 12">11　核心例题：Tutorial 12</h2>
+<h3>Exercise 1</h3>
+<figure class="shot"><img loading="lazy" width="811" height="306" src="../assets/img/tut12-ex1-q.webp" alt="Tutorial 12 Exercise 1：steal/no-force 下三个事务各需要什么恢复操作"><figcaption>出处：Tut12-Rec-2026.pdf 第 1 页</figcaption></figure>
+<details class="answer"><summary><span class="label acc">官方答案</span>Tutorial 12 Exercise 1 Solution</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="811" height="205" src="../assets/img/tut12-ex1-sol.webp" alt="Tutorial 12 Exercise 1 官方答案"><figcaption>出处：Tut12-Rec-2026.pdf 第 2 页</figcaption></figure>
+<p><b>讲解：</b>这三问正好是第 8 节的三类。A 是第 ② 类：已 commit，但因为 No-Force，修改可能还没写到磁盘，所以 Redo。B 是第 ③ 类：没 commit，但因为 Steal，部分修改可能已经写到磁盘，所以 Undo，然后重启。C 是第 ① 类：checkpoint 时已经全部写到磁盘，不用处理。</p>
+</div></details>
+<h3>Exercise 2</h3>
+<figure class="shot"><img loading="lazy" width="815" height="472" src="../assets/img/tut12-ex2-q.webp" alt="Tutorial 12 Exercise 2：T5 到 T9 的 log，按 deferred update 说明各时间点发生什么"><figcaption>出处：Tut12-Rec-2026.pdf 第 1 页</figcaption></figure>
+<details class="answer"><summary><span class="label acc">官方答案</span>Tutorial 12 Exercise 2 Solution</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="810" height="612" src="../assets/img/tut12-ex2-sol.webp" alt="Tutorial 12 Exercise 2 官方答案"><figcaption>出处：Tut12-Rec-2026.pdf 第 2 页</figcaption></figure>
+<p><b>用工具核对：</b></p>
+<div class="rec-tool" data-policy="0" data-log="[start_transaction, T5]\n[write_item, T5 Z, 30]\n[commit, T5]\n[start_transaction, T7]\n[write_item, T7 C, 31]\n[start_transaction, T8]\n[write_item, T8 D, 13]\n[checkpoint]\n[start_transaction T6]\n[write_item T6, Z, 65]\n[start_transaction, T9]\n[write_item, T9, X, 43]\n[commit, T7]\n[commit, T6]\nsystem crash!"></div>
+<p>T5 在 checkpoint 前 commit，不处理。T7、T6 在 checkpoint 后 commit，按它们在 log 里的顺序 Redo（T7，然后 T6）。T8、T9 没 commit，deferred update 下没有往磁盘写过东西，忽略并重启。把策略切到 Immediate，可以看到官方答案最后那条 Note：T8、T9 变成 Undo。</p>
+</div></details>
+
+<h2 id="example-exam" data-short="真题：2023–2025">12　真题：同一份 log 考了三年</h2>
+<figure class="shot"><img loading="lazy" width="750" height="1116" src="../assets/img/exam-2025-q12.webp" alt="2025 年试卷 Question 12：T5 到 T9 的 log，画时间线并说明 immediate update 的两种策略"><figcaption>出处：EXAM/2025.pdf 第 11 页</figcaption></figure>
+<p>2024 Q11 和 2025 Q12 的 log 一模一样，只是问的策略不同：2024 年问 Deferred（No-Steal / No-Force），2025 年问 Immediate 的两种（Steal / No-Force 和 Steal / Force）。</p>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>12-1 时间线，12-2 两种策略</summary><div class="body">
+<p>分类（工具按课件规则生成）：</p>
+<div class="rec-tool" data-policy="1" data-log="[start_transaction, T7]\n[write_item, T7 X, 60]\n[start_transaction, T8]\n[commit, T7]\n[write_item, T8 Z, 75]\n[start_transaction, T6]\n[write_item, T6 A, 37]\n[checkpoint]\n[start_transaction T5]\n[write_item T5, A, 62]\n[start_transaction, T9]\n[write_item, T9, C, 71]\n[commit, T8]\n[commit, T5]\nsystem crash!"></div>
+<ul>
+<li><b>T7</b>：checkpoint 前已 commit → 不处理。</li>
+<li><b>T8</b>：checkpoint 前开始，checkpoint 后 commit → 第 ② 类。</li>
+<li><b>T5</b>：checkpoint 后开始并 commit → 第 ② 类。</li>
+<li><b>T6</b>：checkpoint 前开始，一直没 commit → 第 ③ 类。</li>
+<li><b>T9</b>：checkpoint 后开始，没 commit → 第 ③ 类。</li>
+</ul>
+<p><b>(1) Steal / No-Force（Undo / Redo）：</b></p>
+<p class="ans-en">T7 committed before the checkpoint, so its updates are already on disk: no action. T6 and T9 had not committed at the crash; because of Steal, some of their updates may have been flushed to disk, so they are undone using BFIMs, scanning the log backward (T9 first, then T6), and then restarted. T8 and T5 committed after the checkpoint; because of No-Force, their updates may not have been flushed to disk, so they are redone using AFIMs, scanning the log forward (T8, then T5).</p>
+<p><b>(2) Steal / Force（Undo / No-Redo）：</b></p>
+<p class="ans-en">T6 and T9 are still undone (backward) and restarted, because Steal may have written their uncommitted updates to disk. T8 and T5 need no redo: under Force, all their updated pages were flushed to disk when they committed. T7 needs no action.</p>
+<p><b>2024 Q11-2（Deferred，No-Steal / No-Force）：</b></p>
+<p class="ans-en">T7: no action. T8 and T5 committed after the checkpoint and are redone from the log in the order they committed (T8, then T5), because No-Force means their AFIMs may not be on disk. T6 and T9 had not committed; under No-Steal none of their updates were written to disk, so no undo is needed: they are ignored and restarted.</p>
+<p>在工具上方把策略切到 Steal / Force 或 Deferred，可以看到对应的表。</p>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<figure class="shot"><img loading="lazy" width="748" height="511" src="../assets/img/exam-2023-q8.webp" alt="2023 年试卷 Question 8（10 分）：T3、T4、T5、T6、T8 的 log，immediate update"><figcaption>出处：EXAM/2023.pdf 第 10 页</figcaption></figure>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2023 Q8</summary><div class="body">
+<div class="rec-tool" data-policy="1" data-log="[start_transaction, T5]\n[write_item, T5 A, 60]\n[start_transaction, T6]\n[commit, T5]\n[write_item, T6 C, 75]\n[start_transaction, T4]\n[write_item, T4 D, 37]\n[checkpoint]\n[start_transaction T3]\n[write_item T3, E, 62]\n[start_transaction, T8]\n[write_item, T8, F, 71]\n[commit, T6]\n[commit, T3]\nsystem crash!"></div>
+<p>结构和 2024、2025 年的 log 相同，只是换了编号：T5 不处理；T6、T3 Redo（从前往后）；T8、T4 Undo（从后往前：先 T8 后 T4），然后重启。题目只说 immediate update，没有说 Force 还是 No-Force。稳妥的写法是按 Steal / No-Force（Undo / Redo）作答，再补一句：如果是 Steal / Force，则 T6、T3 不需要 Redo。</p>
+</div></details>
+</div>
+
+<h2 id="variants" data-short="进阶变式题">13　进阶变式题</h2>
+<p>答案由本页工具的程序生成。程序先用课件第 33–36 页的例题和 Tutorial 12 Exercise 2 的官方答案核对过。</p>
+<div class="problem"><p class="title">变式 1　两个 checkpoint</p>
+<pre class="ra">[start_transaction, T1]
+[write_item, T1, A, 5, 8]
+[start_transaction, T2]
+[checkpoint]
+[write_item, T2, B, 1, 2]
+[commit, T1]
+[start_transaction, T3]
+[write_item, T3, C, 7, 9]
+[checkpoint]
+[commit, T2]
+[start_transaction, T4]
+[write_item, T4, A, 8, 3]
+[write_item, T3, D, 4, 6]
+[commit, T4]
+system crash!</pre>
+<p>分别按 Deferred、Steal / No-Force、Steal / Force 说明每个事务的处理。</p></div>
+<details class="answer"><summary><span class="label">程序生成的答案</span>变式 1</summary><div class="body">
+<div class="rec-tool" data-log="[start_transaction, T1]\n[write_item, T1, A, 5, 8]\n[start_transaction, T2]\n[checkpoint]\n[write_item, T2, B, 1, 2]\n[commit, T1]\n[start_transaction, T3]\n[write_item, T3, C, 7, 9]\n[checkpoint]\n[commit, T2]\n[start_transaction, T4]\n[write_item, T4, A, 8, 3]\n[write_item, T3, D, 4, 6]\n[commit, T4]\nsystem crash!"></div>
+<p>只看<b>最后一个</b> checkpoint。T1 在两个 checkpoint 之间 commit，对最后一个 checkpoint 来说属于“之前已 commit”，不处理。T2、T4 在最后一个 checkpoint 之后 commit。T3 没 commit。</p>
+<ul>
+<li>Deferred：Redo T2、T4；T3 忽略并重启。</li>
+<li>Steal / No-Force：Undo T3（它改了 C 和 D，从后往前：D 恢复成 4，C 恢复成 7）；Redo T2、T4。</li>
+<li>Steal / Force：只 Undo T3，没有 Redo。</li>
+</ul>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<div class="problem"><p class="title">变式 2　checkpoint 之后没有任何 commit</p>
+<pre class="ra">[start_transaction, T10]
+[write_item, T10, P, 1, 2]
+[start_transaction, T11]
+[write_item, T11, Q, 3, 4]
+[commit, T10]
+[start_transaction, T12]
+[write_item, T12, R, 5, 6]
+[commit, T11]
+[checkpoint]
+[start_transaction, T13]
+[write_item, T13, P, 2, 9]
+[write_item, T12, Q, 4, 0]
+system crash!</pre>
+<p>三种策略下各需要做什么？恢复后 P、Q、R 的值是多少？</p></div>
+<details class="answer"><summary><span class="label">程序生成的答案</span>变式 2（最后的数值是手工推导）</summary><div class="body">
+<div class="rec-tool" data-log="[start_transaction, T10]\n[write_item, T10, P, 1, 2]\n[start_transaction, T11]\n[write_item, T11, Q, 3, 4]\n[commit, T10]\n[start_transaction, T12]\n[write_item, T12, R, 5, 6]\n[commit, T11]\n[checkpoint]\n[start_transaction, T13]\n[write_item, T13, P, 2, 9]\n[write_item, T12, Q, 4, 0]\nsystem crash!"></div>
+<p>T10、T11 都在 checkpoint 前 commit，不处理。没有需要 Redo 的事务。T12、T13 没 commit：Deferred 下忽略并重启；两种 Steal 策略下都要 Undo，顺序从后往前是 T13、T12。</p>
+<p>Undo 按 log 从后往前逐条做：Q 恢复成 4（T12 的第二次写），P 恢复成 2（T13），R 恢复成 5（T12 在 checkpoint 之前的那次写也要撤，因为 T12 整个事务没 commit）。恢复后 P = 2，Q = 4，R = 5，正好是只有 T10、T11 生效的状态。</p>
+</div></details>
+</div>
+<p class="only-detail-hint">切换到“细化讲解”可以看到变式 2 和 2023 Q8。</p>
+
+<h3>自己试：Recovery 工具</h3>
+<p>可以改 log 再分析。每行一条记录。</p>
+<div class="rec-tool" data-edit data-presets="2024 Q11 / 2025 Q12|[start_transaction, T7]\n[write_item, T7 X, 60]\n[start_transaction, T8]\n[commit, T7]\n[write_item, T8 Z, 75]\n[start_transaction, T6]\n[write_item, T6 A, 37]\n[checkpoint]\n[start_transaction T5]\n[write_item T5, A, 62]\n[start_transaction, T9]\n[write_item, T9, C, 71]\n[commit, T8]\n[commit, T5]\nsystem crash!;;课件例题|[start_transaction, T1]\n[write_item, T1, D, 10, 20]\n[commit, T1]\n[start_transaction, T3]\n[write_item, T3, B, 20, 15]\n[start_transaction, T4]\n[write_item, T4, A, 15, 20]\n[checkpoint]\n[start_transaction, T2]\n[write_item, T2, D, 20, 15]\n[start_transaction, T5]\n[write_item, T5, C, 15, 30]\n[commit, T3]\n[commit, T2]\nsystem crash!"></div>
+
+<h2 id="summary" data-short="本章小结">14　本章小结</h2>
+<ul>
+<li>Undo 用 BFIM，保证 Atomicity，从 crash 往回做；Redo 用 AFIM，保证 Durability，从 checkpoint 往后做。</li>
+<li>没 commit 的事务的 dirty page 已经写到磁盘（Steal）→ 需要 Undo。已 commit 的事务还没写到磁盘（No-Force）→ 需要 Redo。</li>
+<li>WAL：BFIM 和 AFIM 先 force-write 到 log。</li>
+<li>Checkpoint：暂停事务，把 buffer 写到磁盘，在 log 里记一条，再恢复事务。</li>
+<li>备份有三种：full、differential、incremental。</li>
+</ul>
+<div class="slides one"><a href="#" data-sl="w12-39"><img width="1067" height="600" alt="Week12-Recovery.pdf 第 39 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week12-Recovery.pdf 第 39 页。点图片看大图。</p>
+
+<h2 id="quiz" data-short="小测">15　小测</h2>
+<div class="quiz" data-quiz="quiz-data"></div>
+<script type="application/json" id="quiz-data">[
+{"id":"q1","q":"Undo 用的是哪个值，朝哪个方向扫描 log？","options":["AFIM，从前往后","BFIM，从后往前","BFIM，从前往后","AFIM，从后往前"],"answer":1,"why":"Undo 把旧值（BFIM）写回去，从 log 末尾往回扫，这样被改过多次的数据最后落在最老的值上。"},
+{"id":"q2","q":"事务 T 在 checkpoint 之前开始，在 checkpoint 之后、crash 之前 commit。Steal / No-Force 下怎么处理？","options":["不用处理","Undo","Redo","忽略并重启"],"answer":2,"why":"分类只看 commit 的位置。它在 checkpoint 后 commit，No-Force 下修改可能还没写到磁盘，所以 Redo。"},
+{"id":"q3","q":"Deferred update 下，crash 时还没 commit 的事务怎么处理？","options":["Undo 然后重启","Redo","忽略，然后重启","不用处理，也不重启"],"answer":2,"why":"Deferred update 是 No-Steal：没 commit 的事务没有往磁盘写过任何东西，不需要 Undo，忽略它的修改并重启。"},
+{"id":"q4","q":"“Steal” 的意思是？","options":["commit 时立刻把页写到磁盘","事务 commit 之前，它改过的页就可以被写到磁盘","事务可以读别的事务的数据","log 可以晚于数据写入"],"answer":1,"why":"Steal：dirty page 可以在事务 commit 前被 flush 到磁盘，所以恢复时需要 Undo。选项一是 Force。"},
+{"id":"q5","q":"Steal / Force 对应哪种恢复？","options":["Undo / Redo","Undo / No-Redo","No-Undo / Redo","No-Undo / No-Redo"],"answer":1,"why":"Steal → 需要 Undo；Force → 不需要 Redo。"},
+{"id":"q6","q":"按 WAL，事务 commit 之前必须先做什么？","options":["把它改过的数据页全部写到磁盘","做一次 checkpoint","把它所有的 AFIM 写进 log，并把 log force-write 到磁盘","把 BFIM 从 log 里删除"],"answer":2,"why":"WAL 的 Redo 规则：commit 前所有 AFIM 必须已在 log 里，且 log 已 force-write。数据页不一定要写（那是 Force 策略）。"},
+{"id":"q7","q":"哪种备份恢复时需要“最近一次 full backup 加上之后所有的备份”？","options":["Full backup","Differential backup","Incremental backup","Logical backup"],"answer":2,"why":"Incremental 每次只存上次备份之后的变化，所以恢复要 full 加上之后所有的 incremental，恢复最慢。"},
+{"id":"q8","q":"log 里有 [write_item, T1, D, 10, 20]。D 的 BFIM 和 AFIM 分别是？","options":["BFIM = 20，AFIM = 10","BFIM = 10，AFIM = 20","两个都是 20","两个都是 10"],"answer":1,"why":"格式是 [write_item, T, X, old_value, new_value]。旧值 10 是 BFIM，新值 20 是 AFIM。"}
+]</script>
+
+<nav class="pager" aria-label="翻页"><a rel="prev" href="cc.html">← 第 3 章 并发控制：2PL、TO、死锁</a><a rel="next" href="qep.html">第 5 章 查询处理与优化 →</a></nav>
+<p class="kbd-hint">键盘：<kbd>←</kbd> <kbd>→</kbd> 在小节之间翻页。</p>
+</div></main>
+</div>
+<script src="../assets/js/tools-core.js"></script>
+<script src="../assets/js/tools-ui.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>

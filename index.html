@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="quick">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>INFS7903 期末复习</title>
+<link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body data-base="">
+<header class="top">
+  <button type="button" class="icon-btn menu-btn" aria-label="打开目录">目录</button>
+  <a class="brand" href="index.html">INFS7903 <small>期末复习</small></a>
+  <span class="grow"></span>
+  <span class="top-progress"></span>
+  <div class="seg" role="group" aria-label="阅读模式">
+    <button type="button" data-mode-btn="quick" aria-pressed="true">一天速通</button>
+    <button type="button" data-mode-btn="detail" aria-pressed="false">细化讲解</button>
+  </div>
+  <button type="button" class="icon-btn" data-theme-btn>深色</button>
+</header>
+<div class="shell">
+<nav class="side" aria-label="目录"></nav>
+<main>
+<div class="col">
+  <p class="kicker">INFS7903 RELATIONAL DATABASE SYSTEMS</p>
+  <h1>期末复习</h1>
+  <p class="lede">按往年试卷的分值安排的复习路线。每章先讲规则，再做课件、tutorial 和试卷里的原题，最后做更难的变式题。</p>
+
+  <h2 id="modes" data-short="两种模式" data-nodone>两种模式</h2>
+  <p>页面右上角可以随时切换，切换后停留在原来的位置。</p>
+  <ul>
+    <li><b>一天速通：</b>只留考试高权重的规则、核心例题和必会题型，全部读完加练习约 8 小时。</li>
+    <li><b>细化讲解：</b>在速通内容的原位置展开推导、易错点、概念对比和更多例题。</li>
+  </ul>
+
+  <h2 id="plan" data-short="一天的安排" data-nodone>一天的安排</h2>
+  <p>从 9:00 开始算，学习 8 小时，中间休息 1.5 小时。时间只是参考，可以整体平移。</p>
+  <div class="scroll"><table class="chapters">
+    <thead><tr><th></th><th>章节</th><th>时间</th><th>用时</th><th>状态</th></tr></thead>
+    <tbody id="chapter-rows"></tbody>
+  </table></div>
+  <div id="home-progress"></div>
+  <div class="detail">
+    <p class="detail-tag">细化讲解</p>
+    <p>章节顺序按 2022、2023 两份试卷里各知识点的总分排列，并参考了 2024、2025 两份试卷。2022 年卷里的成本计算题（索引空间、选择算子、嵌套循环连接，共 40 分）在之后三年没有再出现，只放在细化模式里，不计入 8 小时。</p>
+  </div>
+
+  <h2 id="wrong" data-short="错题本" data-nodone>错题本</h2>
+  <div id="wrong-book"></div>
+
+  <h2 id="about" data-short="关于答案" data-nodone>关于答案</h2>
+  <ul>
+    <li>例题截图都标了出处（文件名和页码）。</li>
+    <li>标 <span class="label acc">官方答案</span> 的来自课件或 tutorial 的答案页。</li>
+    <li>标 <span class="label">AI 讲解，非官方</span> 的是往年试卷题，试卷没有官方答案，讲解里没把握的地方会写明。</li>
+    <li>标 <span class="label">程序生成的答案</span> 的变式题由模拟程序算出，程序先用官方答案核对过。</li>
+  </ul>
+</div>
+</main>
+</div>
+<script src="assets/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="zh-CN" data-mode="quick">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 6 章 关系代数 RA · INFS7903 期末复习</title>
+<link rel="stylesheet" href="../assets/css/site.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
+</head>
+<body data-chapter="ra" data-base="../">
+<header class="top">
+  <button type="button" class="icon-btn menu-btn" aria-label="打开目录">目录</button>
+  <a class="brand" href="../index.html">INFS7903 <small>期末复习</small></a>
+  <span class="grow"></span>
+  <span class="top-progress"></span>
+  <div class="seg" role="group" aria-label="阅读模式">
+    <button type="button" data-mode-btn="quick" aria-pressed="true">一天速通</button>
+    <button type="button" data-mode-btn="detail" aria-pressed="false">细化讲解</button>
+  </div>
+  <button type="button" class="icon-btn" data-theme-btn>深色</button>
+</header>
+<div class="shell">
+<nav class="side" aria-label="目录"></nav>
+<main><div class="doc">
+<p class="kicker">第 6 章 · WEEK 7 · RELATIONAL ALGEBRA</p>
+<h1>关系代数 RA</h1>
+<p class="lede">Week 7 整节课：八个运算符，以及考试的三种句型：普通连接、“没有”、“所有”。</p>
+<div class="meta"><span>速通约 45 分钟</span><span>2023 10 分，2024 6/50，2025 9/50</span></div>
+<h2 id="what" data-short="RA 是什么">1　Relational Algebra 是什么</h2>
+<p>SQL 是 <b>declarative</b>（声明式）的：你只说要什么结果，DBMS 决定怎么做。Relational Algebra（RA）是 <b>procedural</b>（过程式）的：表达式本身规定了运算的先后顺序，也就是“怎么做”。每一句 SQL 查询都会被 DBMS 翻译成 RA 表达式再执行，所以上一章的查询优化是在 RA 上做的。</p>
+<p>RA 的运算对象是 relation（表），<b>结果也是 relation</b>，所以运算可以一层套一层。RA 只管查询，不管插入、删除、更新。</p>
+<div class="scroll"><table>
+<tr><th>来自集合论</th><th>符号</th><th>为关系数据库专门设计</th><th>符号</th></tr>
+<tr><td>Union 并</td><td>∪</td><td>Select 选行</td><td>σ</td></tr>
+<tr><td>Intersection 交</td><td>∩</td><td>Project 选列</td><td>π</td></tr>
+<tr><td>Difference 差</td><td>−</td><td>Join 连接</td><td>⋈</td></tr>
+<tr><td>Cartesian product 笛卡尔积</td><td>×</td><td>Division 除</td><td>÷</td></tr>
+</table></div>
+<div class="note"><b>别混：</b>RA 的 σ（Select）对应 SQL 的 <b>WHERE</b>；SQL 的 SELECT 子句对应 RA 的 <b>π</b>（Project）。</div>
+<div class="slides"><a href="#" data-sl="w07-4"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 4 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-6"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 6 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-7"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 7 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-8"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 8 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-9"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 9 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-10"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 10 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week07-RA(1).pdf 第 4、6–10 页。点图片看大图。</p>
+<p>这一章的例子都用课件的 COMPANY 数据库：</p>
+<pre class="ra">EMPLOYEE   [Ename, SSN, DOB, Address, Sex, Salary, SuperSSN, Dno]
+DEPARTMENT [Dname, Dnumber, MgrSSN, MgrStart]
+PROJECT    [PName, Pnumber, Plocation, Dnum]
+WORKS_ON   [ESSN, Pno, Hours]
+DEPENDENT  [ESSN, Dep_Name, Sex, DOB, Relationship]
+DEPT_LOCS  [Dnumber, Dlocation]</pre>
+
+<h2 id="select-project" data-short="σ 和 π">2　Select σ 和 Project π</h2>
+<p><b>σ<sub>条件</sub>(R)</b>：从 R 里挑出<b>满足条件的行</b>，列不变。条件里可以用 =、≠、&lt;、&gt;、≤、≥ 和 and、or、not。</p>
+<pre class="ra">σ Dno = 4 (EMPLOYEE)                       部门 4 的员工的全部信息
+σ Salary > 30000 (EMPLOYEE)                工资高于 30,000 的员工
+σ (Dno = 4 and Salary > 25000) or (Dno = 5 and Salary > 30000) (EMPLOYEE)</pre>
+<p><b>π<sub>列名</sub>(R)</b>：只保留指定的<b>列</b>。结果里<b>重复的行会被去掉</b>，因为 relation 是集合。</p>
+<pre class="ra">π Ename, DOB, Salary (EMPLOYEE)            每个员工的姓名、生日、工资
+π Dno, Salary (EMPLOYEE)                   每个部门发的各种工资（相同的 (Dno, Salary) 只留一行）</pre>
+<div class="slides"><a href="#" data-sl="w07-12"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 12 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-13"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 13 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-14"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 14 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-15"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 15 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-16"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 16 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-17"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 17 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-18"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 18 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week07-RA(1).pdf 第 12–18 页。点图片看大图。</p>
+
+<h2 id="naming" data-short="分步写：赋值 ←">3　分步写：赋值和改名</h2>
+<p>复杂的查询有两种写法：嵌套成一个大表达式，或者<b>分步写</b>，把中间结果用 <b>←</b> 存到一个临时 relation 里。考试两种都可以，分步写不容易错，课件的例题也都是分步写的。</p>
+<pre class="ra">一步写：  π Ename, Salary ( σ Dno = 5 (EMPLOYEE) )
+
+分步写：  DEP5_EMPS ← σ Dno = 5 (EMPLOYEE)
+          RESULT    ← π Ename, Salary (DEP5_EMPS)</pre>
+<p>赋值时可以顺便<b>给列改名</b>，在名字后面的括号里写新列名：</p>
+<pre class="ra">RESULT(Employee, DOB) ← π Ename, DOB (EMPLOYEE)</pre>
+<p>改名的主要用途是让两张表的列名一致，后面才能做 natural join 或集合运算。</p>
+<div class="slides"><a href="#" data-sl="w07-19"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 19 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-20"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 20 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-21"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 21 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-22"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 22 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week07-RA(1).pdf 第 19–22 页。点图片看大图。</p>
+
+<h2 id="set" data-short="∪ ∩ −">4　集合运算：∪、∩、−</h2>
+<p>三个运算都要求两个 relation 是 <b>union compatible</b>：<b>列数相同</b>，并且<b>对应列的 domain（取值范围）相同</b>。列名不需要相同。</p>
+<div class="scroll"><table>
+<tr><th>运算</th><th>结果</th><th>课件例子</th></tr>
+<tr><td>R1 ∪ R2</td><td>在 R1 或 R2 里出现的行（重复的去掉）</td><td>有 dependent <b>或者</b>参加了项目的员工的 ESSN：<br>π<sub>ESSN</sub>(DEPENDENT) ∪ π<sub>ESSN</sub>(WORKS_ON)</td></tr>
+<tr><td>R1 ∩ R2</td><td>在 R1 和 R2 里<b>都</b>出现的行</td><td>有 dependent <b>并且</b>参加了项目的：<br>π<sub>ESSN</sub>(DEPENDENT) ∩ π<sub>ESSN</sub>(WORKS_ON)</td></tr>
+<tr><td>R1 − R2</td><td>在 R1 里但<b>不在</b> R2 里的行</td><td>有 dependent 但<b>没有</b>参加项目的：<br>π<sub>ESSN</sub>(DEPENDENT) − π<sub>ESSN</sub>(WORKS_ON)</td></tr>
+</table></div>
+<p>WORKS_ON ∪ DEPENDENT 是<b>不合法</b>的：一个 3 列，一个 5 列，不 union compatible。所以上面的例子都先用 π 投影到同一列 ESSN。</p>
+<div class="note key"><b>“没有”“不”的查询一律用 −。</b>套路：全部的 − 有的 = 没有的。这是考试最常见的句型之一（2025 Q6，7 分）。</div>
+<div class="slides"><a href="#" data-sl="w07-24"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 24 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-25"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 25 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-26"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 26 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-27"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 27 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-28"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 28 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-29"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 29 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-30"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 30 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-31"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 31 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-32"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 32 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-33"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 33 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week07-RA(1).pdf 第 24–33 页。点图片看大图。</p>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>运算的性质（课件第 35–39 页）</h3>
+<ul>
+<li>∪ 和 ∩ 满足交换律和结合律：A ∪ B = B ∪ A，(A ∪ B) ∪ C = A ∪ (B ∪ C)。</li>
+<li><b>− 不满足</b>：A − B ≠ B − A，(A − B) − C ≠ A − (B − C)。</li>
+<li>优先级从高到低：比较运算符（=、&lt; 等）→ not → and → or → σ、π → ×、⋈、−、∪、∩。同级从左到右，括号可以改变顺序。</li>
+</ul>
+<p>优先级的例子（课件第 37 页）：“男性，并且（工资低于 40,000 或者在部门 5）”要写成 σ<sub>Sex='M' and (Salary&lt;40000 or Dnum=5)</sub>。去掉括号就变成“（男性并且工资低于 40,000）或者在部门 5”，把部门 5 的女员工也选进来了。</p>
+<p><b>De Morgan 定律：</b>not (p and q) ≡ (not p) or (not q)；not (p or q) ≡ (not p) and (not q)。例子：“既不在 Brisbane、也不归部门 4 管的项目”有三种等价写法：</p>
+<pre class="ra">π Pname ( σ not(Plocation = 'Brisbane') and not(Dnum = 4) (PROJECT) )
+π Pname ( σ not(Plocation = 'Brisbane' or Dnum = 4) (PROJECT) )
+π Pname ( σ Plocation ≠ 'Brisbane' and Dnum ≠ 4 (PROJECT) )</pre>
+<div class="slides"><a href="#" data-sl="w07-35"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 35 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-36"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 36 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-37"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 37 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-38"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 38 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-39"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 39 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week07-RA(1).pdf 第 35–39 页。点图片看大图。</p>
+</div>
+
+<h2 id="product" data-short="× 笛卡尔积">5　Cartesian Product ×</h2>
+<p>R1 × R2：把 R1 的<b>每一行</b>和 R2 的<b>每一行</b>配对。R1 有 n 列 r 行，R2 有 m 列 t 行，结果有 <b>n + m 列，r × t 行</b>。不要求 union compatible。</p>
+<p>× 本身没什么意义（把不相关的行也配到了一起），后面要跟一个 σ 把真正相关的行挑出来。课件例 14“列出每个女员工的 dependent 的名字”：</p>
+<pre class="ra">FEMALE_EMPS ← σ Sex = 'F' (EMPLOYEE)
+EMP_NAMES   ← π Ename, SSN (FEMALE_EMPS)
+EMP_DEPEND  ← EMP_NAMES × DEPENDENT
+ACTUAL_DEP  ← σ SSN = ESSN (EMP_DEPEND)
+RESULT      ← π Ename, Dep_Name (ACTUAL_DEP)</pre>
+<p>“× 之后跟 σ”这两步合起来就是 join。</p>
+<div class="slides"><a href="#" data-sl="w07-40"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 40 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-41"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 41 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-42"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 42 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week07-RA(1).pdf 第 40–42 页。点图片看大图。</p>
+
+<h2 id="join" data-short="⋈ 连接">6　Join ⋈</h2>
+<p>Join 把两张表里<b>相关的行</b>拼成一行。信息分散在几张表里时就要用它。</p>
+<div class="scroll"><table>
+<tr><th>种类</th><th>写法</th><th>特点</th></tr>
+<tr><td><b>Theta-join</b></td><td>R1 ⋈<sub>A θ B</sub> R2</td><td>连接条件可以用 =、≠、&lt;、≤、&gt;、≥ 里的任何一个</td></tr>
+<tr><td><b>Equi-join</b></td><td>R1 ⋈<sub>A = B</sub> R2</td><td>条件只用 =。结果里 A 和 B 两列都保留。最常用</td></tr>
+<tr><td><b>Natural join</b></td><td>R1 * R2</td><td>自动在两张表<b>同名</b>的列上做等值连接，不用写条件；重复的那一列只留一个</td></tr>
+<tr><td><b>Outer join</b></td><td>左外 ⟕、右外 ⟖</td><td>配不上的行也保留，缺的部分填 NULL。普通的 join（inner join）会把配不上的行丢掉</td></tr>
+</table></div>
+<pre class="ra">Equi-join（课件例 16：每个部门的经理的名字）
+  DEPT_MGR ← DEPARTMENT ⋈ MgrSSN = SSN EMPLOYEE
+  RESULT   ← π Ename (DEPT_MGR)
+
+Theta-join（课件例 15：对每个员工，列出工资比他高的员工）
+  A ← EMPLOYEE,  B ← EMPLOYEE
+  RESULT ← π A.Ename, B.Ename ( A ⋈ A.Salary < B.Salary B )</pre>
+<div class="note key"><b>Natural join 的坑：</b>它用<b>所有</b>同名的列来连接。用之前先确认两张表只有你想要的那一列同名；不是的话，先用 π 和改名把列名调整好。列名不同时（比如 SSN 和 ESSN）natural join 连不上，要么改名，要么用 equi-join。</div>
+<div class="slides"><a href="#" data-sl="w07-44"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 44 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-45"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 45 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-46"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 46 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-47"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 47 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-48"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 48 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-49"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 49 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-50"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 50 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-51"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 51 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-52"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 52 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week07-RA(1).pdf 第 44–52 页。点图片看大图。</p>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>Natural join 的两个课件例子</h3>
+<p><b>例 17：</b>DEPARTMENT [Dname, Dnumber, MgrSSN, MgrStart] * DEPT_LOCS [Dnumber, Dlocation]。同名的列只有 Dnumber，在它上面连接。结果 schema 是 (Dname, Dnumber, MgrSSN, MgrStart, Dlocation)，Dnumber 只出现一次。</p>
+<p><b>例 18：</b>EMPLOYEE * DEPARTMENT：这两张表<b>没有</b>同名的列（EMPLOYEE 里叫 Dno、SSN，DEPARTMENT 里叫 Dnumber、MgrSSN），所以连不出想要的结果。而</p>
+<pre class="ra">EMP(MgrSSN, Dnumber) ← π SSN, Dno (EMPLOYEE)
+RESULT ← EMP * DEPARTMENT</pre>
+<p>改名之后有<b>两个</b>同名列，natural join 要求两个都相等：这个员工既在这个部门，又是这个部门的经理。结果是“在自己部门当经理的员工”。</p>
+<p><span class="label">说明</span>例 18 课件只提了问题，没有给文字答案，上面是我的分析。</p>
+<h3>Outer join（课件第 53–55 页）</h3>
+<ul>
+<li><b>Left outer join</b>：左边表里配不上的行也保留。例 19：列出所有员工和他们的部门（没有部门的员工也要列出来）：EMPLOYEE ⟕<sub>Dno=Dnumber</sub> DEPARTMENT。</li>
+<li><b>Right outer join</b>：右边表里配不上的行也保留。例 20：列出每个员工和他的上司（没有上司的也列）：EMP ⟖<sub>SuperSSN=SSN</sub> EMPLOYEE。</li>
+</ul>
+<p>课件里外连接的符号是在 ⋈ 的一侧加方括号。</p>
+<div class="slides"><a href="#" data-sl="w07-53"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 53 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-54"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 54 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-55"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 55 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week07-RA(1).pdf 第 53–55 页。点图片看大图。</p>
+</div>
+
+<h2 id="division" data-short="÷ 除">7　Division ÷：“所有”的查询</h2>
+<p>R1 ÷ R2 回答的是：<b>R1 里哪些对象，和 R2 里的<u>每一个</u>值都配过对？</b></p>
+<ul>
+<li><b>结果的列</b> = R1 的列去掉 R2 的列。</li>
+<li><b>要求：</b>R2 的列必须是 R1 的最后几列，而且列名相同。</li>
+<li><b>结果的行：</b>把 R1 按“剩下的列”分组；某一组里如果 R2 的每个值都出现了，这一组就进结果。</li>
+</ul>
+<p>下面是课件第 57 页的例子。勾选 R2 里放哪些 Subject，看结果怎么变：</p>
+<div class="div-tool" data-cols="Student,Degree,Subject" data-r2="CS114,CS115" data-r1='[["Anna","BIT","CS114"],["Anna","BIT","CS115"],["Anna","BIT","CS180"],["Fred","BSc","CS114"],["Fred","BSc","CS180"]]'></div>
+<p>课件的三个结果（<span class="label acc">官方答案</span>，工具的输出已用程序核对）：R2 = {CS114, CS115} 时结果是 (Anna, BIT)；R2 = {CS114, CS180} 时是 (Anna, BIT) 和 (Fred, BSc)；R2 = {CS115, CS180} 时是 (Anna, BIT)。</p>
+<div class="slides"><a href="#" data-sl="w07-56"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 56 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-57"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 57 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-58"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 58 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week07-RA(1).pdf 第 56–58 页。点图片看大图。</p>
+
+<h3>真题：2024 Q5 和 2025 Q7（各 2 分）</h3>
+<div class="shots">
+<figure class="shot"><img loading="lazy" width="748" height="364" src="../assets/img/exam-2024-q5.webp" alt="2024 年试卷 Question 5：R1 ÷ R2"><figcaption>出处：EXAM/2024.pdf 第 5 页</figcaption></figure>
+<figure class="shot"><img loading="lazy" width="749" height="319" src="../assets/img/exam-2025-q7.webp" alt="2025 年试卷 Question 7：R1 ÷ R2"><figcaption>出处：EXAM/2025.pdf 第 5 页</figcaption></figure>
+</div>
+<details class="answer"><summary><span class="label">程序生成的答案</span>2024 Q5 和 2025 Q7</summary><div class="body">
+<p><b>2024 Q5：</b>R2 = {IT114, CS200}。</p>
+<div class="div-tool" data-cols="Student,Degree,Subject" data-r2="IT114,CS200" data-r1='[["Andi","BDS","IT114"],["Andi","BDS","IT115"],["Andi","BDS","CS200"],["Ford","BSc","IT114"],["Ford","BSc","CS200"]]'></div>
+<p>Andi 有 IT114 和 CS200，Ford 也都有。R3 的 schema 是 (Student, Degree)，记录是 (Andi, BDS) 和 (Ford, BSc)。</p>
+<p><b>2025 Q7：</b>R2 = {CS130, DS180}。</p>
+<div class="div-tool" data-cols="Student,Degree,Subject" data-r2="CS130,DS180" data-r1='[["Anna","BIT","CS130"],["Anna","BIT","CS115"],["Anna","BIT","DS100"],["Fred","BSc","CS130"],["Fred","BSc","DS180"]]'></div>
+<p>Anna 有 CS130 但<b>没有 DS180</b>，不满足。Fred 两个都有。R3 的 schema 是 (Student, Degree)，记录只有 (Fred, BSc)。</p>
+<p>答题时画出 R3 的表：表头 Student、Degree，下面写记录。题目要求 “including its table schema and records”，表头不能漏。</p>
+</div></details>
+
+<h3>用 ÷ 写查询（课件例 21、24）</h3>
+<p>句子里出现 <b>all、every</b>（“参加了<b>所有</b>……的”）就用 ÷。固定三步：</p>
+<pre class="ra">例 24：找出参加了部门 5 管的所有项目的员工的名字
+
+① 除数：要“全部配上”的那些值（只留一列）
+   DEPT5_PROJS(Pno) ← π Pnumber ( σ Dnum = 5 (PROJECT) )
+② 被除数：（对象, 值）的配对（除数的列放最后，列名一致）
+   EMP_PROJ(SSN, Pno) ← π ESSN, Pno (WORKS_ON)
+③ 相除，再连回去取名字
+   RESULT_EMP_SSNS ← EMP_PROJ ÷ DEPT5_PROJS
+   RESULT ← π Ename (RESULT_EMP_SSNS * EMPLOYEE)</pre>
+<p>注意第 ② 步要先 π 掉 Hours。如果不去掉，结果的列会是 (ESSN, Hours)，意思变成“同一个工时数配上了所有项目”，就错了。</p>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<pre class="ra">例 21：找出参加了 John Smith 参加的所有项目的员工的名字
+
+SMITH      ← σ Ename = 'John Smith' (EMPLOYEE)
+SMITH_PNOS ← π Pno ( WORKS_ON ⋈ ESSN = SSN SMITH )
+SSN_PNOS   ← π ESSN, Pno (WORKS_ON)
+SSNS(SSN)  ← SSN_PNOS ÷ SMITH_PNOS
+RESULT     ← π Ename (SSNS * EMPLOYEE)</pre>
+<h3>÷ 可以用基本运算表示（课件第 63 页）</h3>
+<p>设 R 的列是 (Y, X)，S 的列是 (X)：</p>
+<pre class="ra">T1 ← π Y (R)                    所有候选对象
+T2 ← π Y ( (S × T1) − R )       “应该有但实际没有”的配对，对应的对象就是不合格的
+R ÷ S ← T1 − T2                 候选的 − 不合格的</pre>
+<p>S × T1 是“每个对象都配上每个值”的理想情况；减去 R（实际有的配对）剩下的就是缺的配对。</p>
+<h3>完备集（课件第 60–62 页）</h3>
+<p>{σ, π, ∪, −, ×} 是一个 <b>complete set</b>：其他运算都能用这五个表示，∩、⋈、÷ 只是为了方便。</p>
+<ul>
+<li>R ∩ S = (R ∪ S) − ((R − S) ∪ (S − R))</li>
+<li>R ⋈<sub>条件</sub> S = σ<sub>条件</sub>(R × S)</li>
+<li>Natural join = 改名 → × → σ（同名列相等）→ π（去掉重复的列）</li>
+</ul>
+<div class="slides"><a href="#" data-sl="w07-60"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 60 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-61"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 61 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-62"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 62 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-63"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 63 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week07-RA(1).pdf 第 60–63 页。点图片看大图。</p>
+</div>
+
+<h2 id="formulate" data-short="写查询的方法">8　怎么把一句话写成 RA</h2>
+<p>课件第 59 页的步骤，整理成四个问题：</p>
+<ol>
+<li><b>最后要输出什么？</b>→ 最外层的 π。</li>
+<li><b>条件是什么，落在哪张表上？</b>→ 对那张表先做 σ。</li>
+<li><b>涉及哪几张表，它们靠哪个外键连起来？</b>→ ⋈（写清楚连接条件）。</li>
+<li><b>句子里有没有“没有 / 不”或者“所有 / 每一个”？</b>→ 有“没有”用 −，有“所有”用 ÷。</li>
+</ol>
+<div class="scroll"><table>
+<tr><th>句型</th><th>关键词</th><th>套路</th></tr>
+<tr><td>普通连接</td><td>who work for…, list … of …</td><td>σ 筛选 → ⋈ 连接 → π 输出</td></tr>
+<tr><td>“没有”</td><td>no, not, do not, without</td><td>全部的 − 有的，再连回去取名字</td></tr>
+<tr><td>“所有”</td><td>all, every</td><td>(对象, 值) ÷ (值)，再连回去取名字</td></tr>
+<tr><td>“或者”</td><td>either … or</td><td>分别求两部分，用 ∪</td></tr>
+<tr><td>“并且（两个身份）”</td><td>both … and, who also</td><td>分别求两部分，用 ∩</td></tr>
+</table></div>
+<div class="slides one"><a href="#" data-sl="w07-59"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 59 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week07-RA(1).pdf 第 59 页。点图片看大图。</p>
+
+<h2 id="example-lecture" data-short="课件例题 22–27">9　课件的综合例题（两道是真题原题）</h2>
+<h3>例 22 = 2024 Q6：Research 部门员工的名字和地址</h3>
+<figure class="shot"><img loading="lazy" width="749" height="256" src="../assets/img/exam-2024-q6.webp" alt="2024 年试卷 Question 6（4 分）"><figcaption>出处：EXAM/2024.pdf 第 5 页</figcaption></figure>
+<details class="answer"><summary><span class="label acc">官方答案</span>课件 Week 7 第 66 页（Exercise 22）</summary><div class="body">
+<div class="slides one"><a href="#" data-sl="w07-66"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 66 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week07-RA(1).pdf 第 66 页。点图片看大图。</p>
+<pre class="ra">RESEARCH_DEPT      ← σ Dname = 'Research' (DEPARTMENT)
+RESEARCH_DEPT_EMPS ← RESEARCH_DEPT ⋈ Dnumber = Dno EMPLOYEE
+RESULT             ← π Ename, Address (RESEARCH_DEPT_EMPS)</pre>
+<p><b>讲解：</b>输出是 Ename、Address，在 EMPLOYEE 里。条件 “Research” 是部门名，在 DEPARTMENT 里。两张表靠 Dno = Dnumber 连。先筛出 Research 这一个部门，再连接，最后投影。写成一行也可以：π<sub>Ename, Address</sub>(σ<sub>Dname='Research'</sub>(DEPARTMENT) ⋈<sub>Dnumber=Dno</sub> EMPLOYEE)。</p>
+</div></details>
+
+<h3>例 26 = 2025 Q6：没有 dependent 的员工的名字</h3>
+<figure class="shot"><img loading="lazy" width="749" height="251" src="../assets/img/exam-2025-q6.webp" alt="2025 年试卷 Question 6（7 分）"><figcaption>出处：EXAM/2025.pdf 第 4 页</figcaption></figure>
+<details class="answer"><summary><span class="label acc">官方答案</span>课件 Week 7 第 70 页（Exercise 26）</summary><div class="body">
+<div class="slides one"><a href="#" data-sl="w07-70"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 70 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week07-RA(1).pdf 第 70 页。点图片看大图。</p>
+<pre class="ra">ALL_EMPS            ← π SSN (EMPLOYEE)
+EMPS_WITH_DEPS(SSN) ← π ESSN (DEPENDENT)
+EMPS_WITHOUT_DEPS   ← ALL_EMPS − EMPS_WITH_DEPS
+RESULT              ← π Ename (EMPS_WITHOUT_DEPS * EMPLOYEE)</pre>
+<p><b>讲解：</b>“no dependents” 是“没有”句型。全部员工的 SSN 减去有 dependent 的员工的 SSN。两边都只留一列，才 union compatible；ESSN 改名成 SSN，最后才能和 EMPLOYEE 做 natural join 取出名字。</p>
+<p><b>常见错误：</b>写成 σ<sub>SSN ≠ ESSN</sub>(EMPLOYEE × DEPENDENT)。这选出的是“和某个 dependent 不匹配”的配对，只要数据库里有别人的 dependent，每个员工都会被选出来。“没有”不能用 ≠ 表达，必须用 −。</p>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<h3>其余四道</h3>
+<div class="slides"><a href="#" data-sl="w07-67"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 67 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-68"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 68 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-69"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 69 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a><a href="#" data-sl="w07-71"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 71 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week07-RA(1).pdf 第 67–69、71 页。点图片看大图。</p>
+<p><b>例 23（两次连接）：</b>先筛出 Ipswich 的项目，连到管它的部门（Dnum = Dnumber），再连到部门经理（MgrSSN = SSN），最后投影出项目号、部门号、经理的姓名、地址、生日。</p>
+<p><b>例 24（÷）：</b>见第 7 节。</p>
+<p><b>例 25（∪）：</b>“Smith 作为员工参加的项目”和“Smith 作为部门经理所管部门的项目”分别求出项目号，再 ∪。</p>
+<p><b>例 27（∩）：</b>部门经理的 SSN ∩ 有 dependent 的员工的 SSN，再和 EMPLOYEE 连接取名字。“至少有一个”不需要特别处理：只要在 DEPENDENT 里出现过就是至少有一个。</p>
+</div>
+
+<h2 id="example-exam" data-short="真题：2023 Q9">10　真题：2023 Q9（10 分）</h2>
+<figure class="shot"><img loading="lazy" width="749" height="316" src="../assets/img/exam-2023-q9.webp" alt="2023 年试卷 Question 9：不参加 John Smith 所在任何项目的员工，他们的上司的名字"><figcaption>出处：EXAM/2023.pdf 第 11 页</figcaption></figure>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>2023 Q9：拆成四步</summary><div class="body">
+<p>这句话套了三层：John Smith 的项目 → 参加了这些项目的员工 → <b>没</b>参加的员工 → 他们的<b>上司</b>。从里往外一层一层写。</p>
+<pre class="ra">① John Smith 参加的项目
+   SMITH            ← σ Ename = 'John Smith' (EMPLOYEE)
+   SMITH_PNOS       ← π Pno ( WORKS_ON ⋈ ESSN = SSN SMITH )
+
+② 至少参加了其中一个项目的员工
+   ON_SMITH_PROJS(SSN) ← π ESSN ( WORKS_ON * SMITH_PNOS )
+
+③ 一个都没参加的员工 = 全部 − ②
+   NOT_ON(SSN)      ← π SSN (EMPLOYEE) − ON_SMITH_PROJS
+
+④ 这些员工的上司的名字
+   SUPERS(SSN)      ← π SuperSSN ( NOT_ON * EMPLOYEE )
+   RESULT           ← π Ename ( SUPERS * EMPLOYEE )</pre>
+<p><b>每一步的理由：</b></p>
+<ul>
+<li>② 里 WORKS_ON * SMITH_PNOS 在同名列 Pno 上做 natural join，留下的是 Smith 的项目上的所有工作记录。</li>
+<li>③ “do not work on <b>any</b>” 是“没有”句型，用 −。两边都是单列 SSN。</li>
+<li>④ 先取出这些员工的 SuperSSN，改名成 SSN，再和 EMPLOYEE 连接，这时连上的是<b>上司本人</b>那一行，取他的 Ename。</li>
+</ul>
+<p><span class="label">没把握的地方</span>没有官方答案。两处有解释空间：John Smith 自己不在 NOT_ON 里（他参加了自己的项目）；没有参加任何项目的员工算“不参加 Smith 的项目”，会被包含进来，这符合题目的字面意思。没有上司的员工 SuperSSN 是 NULL，第 ④ 步连接时自然被丢掉。</p>
+</div></details>
+
+<h2 id="example-tut" data-short="例题：Tutorial 7">11　例题：Tutorial 7 Exercise 1</h2>
+<figure class="shot"><img loading="lazy" width="809" height="1080" src="../assets/img/tut07-ex1-q.webp" alt="Tutorial 7 Exercise 1 的 COMPANY 数据库实例（教材 Fig 5.6）"><figcaption>出处：Tut07-RA-2026.pdf 第 1 页。题目 a 到 j 的文字在第 2 页，下面逐题列出。</figcaption></figure>
+<p>Tutorial 用的是教材的 schema，名字拆成 FNAME、LNAME，表名是 WORKS_ON、DEPT_LOCATIONS。d、g、h 需要聚合运算，官方说明跳过。下面每题先自己写，再看答案。答案都是官方原文（Tut07-RA-2026.pdf 第 3–5 页），讲解是我加的。</p>
+<details class="answer"><summary><span class="label acc">官方答案</span>a) 部门 5 里每周在 ProductX 项目上工作超过 10 小时的员工</summary><div class="body">
+<pre class="ra">EMP_W_X     ← (σ PNAME = 'ProductX' (PROJECT)) ⋈ PNUMBER = PNO WORKS_ON
+EMP_WORK_10 ← EMPLOYEE ⋈ SSN = ESSN (σ HOURS > 10 (EMP_W_X))
+RESULT      ← π LNAME, FNAME (σ DNO = 5 (EMP_WORK_10))</pre>
+<p>结果：Smith John；English Joyce。<b>讲解：</b>普通连接句型，三个条件分别落在三张表上：项目名在 PROJECT，工时在 WORKS_ON，部门在 EMPLOYEE。</p>
+</div></details>
+<details class="answer"><summary><span class="label acc">官方答案</span>b) 有一个和自己同名（first name）的 dependent 的员工</summary><div class="body">
+<pre class="ra">E      ← EMPLOYEE ⋈ SSN = ESSN and FNAME = DEPENDENT_NAME DEPENDENT
+RESULT ← π LNAME, FNAME (E)</pre>
+<p>结果为空。<b>讲解：</b>连接条件可以有两个，用 and 连起来。</p>
+</div></details>
+<details class="answer"><summary><span class="label acc">官方答案</span>c) 直接上司是 Franklin Wong 的员工</summary><div class="body">
+<pre class="ra">WONG_SSN  ← π SSN (σ FNAME = 'Franklin' and LNAME = 'Wong' (EMPLOYEE))
+WONG_EMPS ← EMPLOYEE ⋈ SUPERSSN = SSN WONG_SSN
+RESULT    ← π LNAME, FNAME (WONG_EMPS)</pre>
+<p>结果：Smith John；Narayan Ramesh；English Joyce。<b>讲解：</b>EMPLOYEE 和自己连接。先找出 Wong 的 SSN，再找 SUPERSSN 等于它的员工。</p>
+</div></details>
+<details class="answer"><summary><span class="label acc">官方答案</span>e) 参加了每一个项目的员工</summary><div class="body">
+<pre class="ra">PROJ_EMPS(SSN, PNO) ← π ESSN, PNO (WORKS_ON)
+ALL_PROJS(PNO)      ← π PNUMBER (PROJECT)
+EMPS_ALL_PROJS      ← PROJ_EMPS ÷ ALL_PROJS
+RESULT              ← π LNAME, FNAME (EMPLOYEE * EMPS_ALL_PROJS)</pre>
+<p>结果为空。<b>讲解：</b>“every” 是“所有”句型，用 ÷。和课件例 24 一样，只是除数换成全部项目。</p>
+</div></details>
+<details class="answer"><summary><span class="label acc">官方答案</span>f) 不参加任何项目的员工</summary><div class="body">
+<pre class="ra">ALL_EMPS          ← π SSN (EMPLOYEE)
+WORKING_EMPS(SSN) ← π ESSN (WORKS_ON)
+NON_WORKING_EMPS  ← ALL_EMPS − WORKING_EMPS
+RESULT            ← π LNAME, FNAME (EMPLOYEE * NON_WORKING_EMPS)</pre>
+<p>结果为空。<b>讲解：</b>“没有”句型，和 2025 Q6 完全同构，把 DEPENDENT 换成 WORKS_ON。</p>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<details class="answer"><summary><span class="label acc">官方答案</span>i) 至少参加一个 Houston 的项目，但所在部门在 Houston 没有办公地点的员工</summary><div class="body">
+<pre class="ra">E_P_HOU(SSN) ← π ESSN (WORKS_ON ⋈ PNO = PNUMBER (σ PLOCATION = 'Houston' (PROJECT)))
+D_NO_HOU     ← π DNUMBER (DEPT_LOCATIONS) − π DNUMBER (σ DLOCATION = 'Houston' (DEPT_LOCATIONS))
+E_D_NO_HOU   ← π SSN (EMPLOYEE ⋈ DNO = DNUMBER D_NO_HOU)
+RESULT_EMPS  ← E_P_HOU ∩ E_D_NO_HOU
+RESULT       ← π LNAME, FNAME, ADDRESS (EMPLOYEE * RESULT_EMPS)</pre>
+<p>结果：Wallace Jennifer，291 Berry, Bellaire, TX。<b>讲解：</b>两个条件各求一个 SSN 集合，“但”就是同时满足，用 ∩。第二个条件里“没有 Houston 地点的部门”又是一个“没有”句型：全部部门 − 有 Houston 地点的部门。</p>
+</div></details>
+<details class="answer"><summary><span class="label acc">官方答案</span>j) 没有 dependent 的部门经理</summary><div class="body">
+<pre class="ra">DEPT_MANAGERS(SSN)        ← π MGRSSN (DEPARTMENT)
+EMPS_WITH_DEPENDENTS(SSN) ← π ESSN (DEPENDENT)
+RESULT_EMPS               ← DEPT_MANAGERS − EMPS_WITH_DEPENDENTS
+RESULT                    ← π LNAME, FNAME (EMPLOYEE * RESULT_EMPS)</pre>
+<p>结果：Borg James。<b>讲解：</b>“没有”句型，只是“全部”换成了“全部经理”。</p>
+</div></details>
+<h3>Tutorial 7 Exercise 2：直接读有序文件，还是用 B+ 树</h3>
+<figure class="shot"><img loading="lazy" width="811" height="395" src="../assets/img/tut07-ex2-q.webp" alt="Tutorial 7 Exercise 2"><figcaption>出处：Tut07-RA-2026.pdf 第 2 页</figcaption></figure>
+<details class="answer"><summary><span class="label acc">官方答案</span>Tutorial 7 Exercise 2 Solution</summary><div class="body">
+<figure class="shot"><img loading="lazy" width="809" height="648" src="../assets/img/tut07-ex2-sol.webp" alt="Tutorial 7 Exercise 2 官方答案"><figcaption>出处：Tut07-RA-2026.pdf 第 5 页</figcaption></figure>
+<p><b>讲解：</b>A（A ≤ 50,000）和 C（A ≠ 50,000）都要从文件头开始读一大片，B+ 树帮不上忙，反而多了查树的几次 I/O，所以直接读文件略好。B（一个很窄的范围）要先定位到 A = 50,000：在文件上二分要读 log<sub>2</sub>(500,000) ≈ 19 个块，B+ 树只要读树高那么多个块，所以用索引更好。</p>
+</div></details>
+</div>
+
+<h2 id="variants" data-short="进阶变式题">12　进阶变式题</h2>
+<p>RA 表达式没法用本站的程序自动验证（除了 ÷ 的求值）。下面的答案是手工推导的，都标为非官方；每道题都是从课件或 tutorial 的官方答案改一步得到的，我写明了改的是哪一步。</p>
+<div class="problem"><p class="title">变式 1　“没有” + 条件</p>
+<p>找出<b>部门 5</b> 里不参加任何项目的员工的名字。</p></div>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>变式 1</summary><div class="body">
+<pre class="ra">DEPT5_EMPS        ← π SSN ( σ Dno = 5 (EMPLOYEE) )
+WORKING_EMPS(SSN) ← π ESSN (WORKS_ON)
+RESULT_SSNS       ← DEPT5_EMPS − WORKING_EMPS
+RESULT            ← π Ename (RESULT_SSNS * EMPLOYEE)</pre>
+<p>从 Tutorial 7 的 f) 改来：只把“全部员工”换成“部门 5 的员工”。减数不用限制在部门 5。</p>
+</div></details>
+<div class="problem"><p class="title">变式 2　“所有” + 条件</p>
+<p>找出参加了<b>所有位于 Brisbane 的项目</b>的员工的名字和工资。</p></div>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>变式 2</summary><div class="body">
+<pre class="ra">BRIS_PROJS(Pno)    ← π Pnumber ( σ Plocation = 'Brisbane' (PROJECT) )
+EMP_PROJ(SSN, Pno) ← π ESSN, Pno (WORKS_ON)
+RESULT_SSNS        ← EMP_PROJ ÷ BRIS_PROJS
+RESULT             ← π Ename, Salary (RESULT_SSNS * EMPLOYEE)</pre>
+<p>从课件例 24 改来：除数的筛选条件从 Dnum = 5 换成 Plocation = 'Brisbane'，最后多输出一列 Salary。</p>
+</div></details>
+<div class="detail">
+<p class="detail-tag">细化讲解</p>
+<div class="problem"><p class="title">变式 3　“没有”和“所有”套在一起</p>
+<p>找出<b>没有 dependent</b>、并且参加了 <b>John Smith 参加的所有项目</b>的员工的名字。</p></div>
+<details class="answer"><summary><span class="label">AI 讲解，非官方</span>变式 3</summary><div class="body">
+<pre class="ra">（一）参加了 Smith 所有项目的员工：课件例 21
+   SMITH       ← σ Ename = 'John Smith' (EMPLOYEE)
+   SMITH_PNOS  ← π Pno ( WORKS_ON ⋈ ESSN = SSN SMITH )
+   ALL_SMITH(SSN) ← π ESSN, Pno (WORKS_ON) ÷ SMITH_PNOS
+
+（二）没有 dependent 的员工：课件例 26
+   NO_DEPS     ← π SSN (EMPLOYEE) − π ESSN (DEPENDENT)
+
+（三）两个条件同时满足
+   RESULT      ← π Ename ( (ALL_SMITH ∩ NO_DEPS) * EMPLOYEE )</pre>
+<p>两个子问题分别是课件的例 21 和例 26，各得到一个单列的 SSN 集合，“并且”用 ∩。（二）里右边的 ESSN 列和左边的 SSN 列名不同，但 domain 相同，所以 union compatible；结果沿用左边的列名 SSN。这个结果会包含 John Smith 自己（如果他没有 dependent）。</p>
+</div></details>
+</div>
+<p class="only-detail-hint">切换到“细化讲解”可以看到变式 3、Tutorial 7 的其余题目和课件的其余例题。</p>
+
+<h2 id="summary" data-short="本章小结">13　本章小结</h2>
+<ul>
+<li>SQL 是声明式的，说要什么；RA 是过程式的，说怎么做。SQL 查询可以翻译成 RA 表达式。</li>
+<li>RA 的运算作用在 relation 上，结果也是 relation。</li>
+<li>八个运算：σ、π、∪、∩、−、×、⋈、÷。其中 {σ, π, ∪, −, ×} 是完备集。</li>
+<li>∪、∩、− 要求 union compatible。</li>
+<li>考试三种句型：普通连接；“没有”用 −；“所有”用 ÷。</li>
+</ul>
+<div class="slides one"><a href="#" data-sl="w07-72"><img width="1067" height="600" alt="Week07-RA(1).pdf 第 72 页课件" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a></div>
+<p class="slides-cap">课件：Week07-RA(1).pdf 第 72 页。点图片看大图。</p>
+
+<h2 id="quiz" data-short="小测">14　小测</h2>
+<div class="quiz" data-quiz="quiz-data"></div>
+<script type="application/json" id="quiz-data">[
+{"id":"q1","q":"SQL 的 WHERE 子句对应 RA 的哪个运算？","options":["π（Project）","σ（Select）","⋈（Join）","÷（Division）"],"answer":1,"why":"σ 按条件选行，对应 WHERE。SQL 的 SELECT 子句选的是列，对应 π。"},
+{"id":"q2","q":"R1 有 3 列 4 行，R2 有 2 列 5 行。R1 × R2 有几列几行？","options":["5 列 9 行","5 列 20 行","6 列 20 行","3 列 20 行"],"answer":1,"why":"列数相加（3 + 2 = 5），行数相乘（4 × 5 = 20）。"},
+{"id":"q3","q":"“找出没有 dependent 的员工”应该用哪个运算？","options":["σ SSN ≠ ESSN","∩","−","÷"],"answer":2,"why":"“没有”用差：全部员工的 SSN − 有 dependent 的员工的 SSN。用 ≠ 是错的，它只说明和某一个 dependent 不匹配。"},
+{"id":"q4","q":"“找出参加了所有项目的员工”应该用哪个运算？","options":["∪","−","⋈","÷"],"answer":3,"why":"all / every 用 ÷：π ESSN, Pno (WORKS_ON) ÷ π Pnumber (PROJECT)。"},
+{"id":"q5","q":"R1(Student, Subject) = {(Ann, A), (Ann, B), (Bob, A), (Cal, B), (Cal, A), (Cal, C)}，R2(Subject) = {A, B}。R1 ÷ R2 是？","options":["{Ann}","{Ann, Cal}","{Ann, Bob, Cal}","{Cal}"],"answer":1,"why":"要 A 和 B 都有。Ann 有 A、B；Cal 有 A、B、C（多出来的不影响）；Bob 只有 A。"},
+{"id":"q6","q":"WORKS_ON [ESSN, Pno, Hours] ∪ DEPENDENT [ESSN, Dep_Name, Sex, DOB, Relationship] 为什么不合法？","options":["因为两张表没有外键关系","因为两张表不 union compatible（列数不同）","因为 ∪ 只能用于同一张表","因为没有先做 σ"],"answer":1,"why":"∪、∩、− 要求列数相同、对应列的 domain 相同。这里一个 3 列一个 5 列。先各自 π ESSN 就可以了。"},
+{"id":"q7","q":"Natural join（*）和 equi-join 的区别是？","options":["Natural join 不去重","Natural join 自动用同名的列做等值连接，并且重复的列只留一个","Natural join 可以用 < 和 >","没有区别"],"answer":1,"why":"Natural join 不用写条件，在所有同名列上做等值连接，结果里同名列只保留一份。Equi-join 要写条件，两列都保留。"},
+{"id":"q8","q":"π Dno (EMPLOYEE) 的结果有多少行？","options":["和 EMPLOYEE 的行数一样","等于不同的 Dno 值的个数","永远只有 1 行","等于 DEPARTMENT 的行数"],"answer":1,"why":"π 会去掉重复的行，所以结果的行数等于 Dno 有多少个不同的值。"}
+]</script>
+
+<nav class="pager" aria-label="翻页"><a rel="prev" href="qep.html">← 第 5 章 查询处理与优化</a><a rel="next" href="disk.html">第 7 章 磁盘与存储 →</a></nav>
+<p class="kbd-hint">键盘：<kbd>←</kbd> <kbd>→</kbd> 在小节之间翻页。</p>
+</div></main>
+</div>
+<script src="../assets/js/tools-core.js"></script>
+<script src="../assets/js/tools-ui.js"></script>
+<script src="../assets/js/app.js"></script>
+</body>
+</html>
