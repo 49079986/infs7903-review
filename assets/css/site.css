@@ -360,3 +360,9 @@ html.lb-open, html.lb-open body { overflow: hidden; }
   .lb-btn { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .lb-stage img { transition: none !important; } }
+
+/* one column width for every block: em would scale with each element's own font size (h1 became wider than the column and drifted left) */
+.doc > *, .detail > * { max-width: 731px; }
+.doc > .detail, .doc > .wide, .doc > .bp, .doc > .slides, .doc > .shots, .doc > .scroll,
+.detail > .wide, .detail > .bp, .detail > .slides, .detail > .shots, .detail > .scroll, .doc > .detail > .detail-tag { max-width: 860px; }
+.doc > details.answer, .detail > details.answer { max-width: 860px; }
